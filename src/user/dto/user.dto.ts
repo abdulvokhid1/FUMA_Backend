@@ -1,4 +1,3 @@
-import { ExceptionsHandler } from '@nestjs/core/exceptions/exceptions-handler';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
@@ -8,6 +7,9 @@ export class RegisterDto {
   @IsString()
   @MinLength(6)
   password: string;
+
+  @IsString()
+  phone: string;
 
   @IsString()
   name?: string;

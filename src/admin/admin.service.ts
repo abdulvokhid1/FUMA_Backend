@@ -2,12 +2,16 @@ import {
   Injectable,
   ForbiddenException,
   UnauthorizedException,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login-admin.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TierRole } from './dto/approve-user.dto';
+import { addMonths } from 'date-fns';
 
 @Injectable()
 export class AdminService {
@@ -50,5 +54,57 @@ export class AdminService {
     const token = await this.jwt.signAsync(payload);
 
     return { access_token: token };
+  }
+
+  async approveUser(userId: number, role: TierRole) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.isApproved) {
+      throw new BadRequestException('User already approved');
+    }
+
+    let accessExpiresAt: Date | null = null;
+    switch (role) {
+      case 'TIER1':
+        accessExpiresAt = addMonths(new Date(), 1);
+        break;
+      case 'TIER2':
+        accessExpiresAt = addMonths(new Date(), 2);
+        break;
+      case 'TIER3':
+        accessExpiresAt = addMonths(new Date(), 3);
+        break;
+      case 'VIP':
+        accessExpiresAt = null;
+        break;
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        role,
+        isApproved: true,
+        accessExpiresAt,
+      },
+    });
+
+    return { message: `User approved as ${role}` };
+  }
+
+  async getNotifications() {
+    return this.prisma.notification.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: true,
+      },
+    });
+  }
+
+  async markNotificationAsRead(id: number) {
+    return this.prisma.notification.update({
+      where: { id },
+      data: { read: true },
+    });
   }
 }
