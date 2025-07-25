@@ -2,40 +2,52 @@ import {
   Controller,
   Post,
   Body,
-  UploadedFile,
+  UseGuards,
+  Get,
+  Req,
   UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
 import { UserService } from './user.service';
-import { RegisterDto, LoginDto } from './dto/user.dto';
+import { RegisterDto, LoginDto, SubmitMembershipDto } from './dto/user.dto';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { User } from '@prisma/client';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CurrentUser } from 'src/auth/current-user.decorator';
+import { multerOptions } from 'src/utils/multer-options';
+
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Post('register')
-  @UseInterceptors(
-    FileInterceptor('paymentProof', {
-      storage: diskStorage({
-        destination: './uploads/payment_proofs',
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          cb(null, `payment_${uniqueSuffix}${extname(file.originalname)}`);
-        },
-      }),
-    }),
-  )
-  register(
-    @Body() dto: RegisterDto,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    return this.userService.register(dto, file);
+  register(@Body() dto: RegisterDto) {
+    return this.userService.register(dto);
   }
 
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.userService.login(dto);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  getMe(@CurrentUser() user: User) {
+    return this.userService.getMe(user.id);
+  }
+
+  @Post('submit-membership')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('paymentProof', multerOptions))
+  async submitMembership(
+    @CurrentUser() user: User,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: SubmitMembershipDto,
+  ) {
+    if (!file) {
+      throw new BadRequestException('결제 영수증 이미지가 필요합니다.');
+    }
+    return this.userService.submitMembership(user.id, dto, file);
   }
 }

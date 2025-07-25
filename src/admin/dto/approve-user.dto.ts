@@ -1,9 +1,10 @@
 import { IsEnum } from 'class-validator';
 
 export enum TierRole {
-  TIER1 = 'TIER1',
-  TIER2 = 'TIER2',
-  TIER3 = 'TIER3',
+  LEVEL1 = 'LEVEL1',
+  LEVEL2 = 'LEVEL2',
+  LEVEL3 = 'LEVEL3',
+  LEVEL4 = 'LEVEL4',
   VIP = 'VIP',
 }
 

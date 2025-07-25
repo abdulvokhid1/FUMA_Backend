@@ -3,6 +3,8 @@ import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { JwtModule } from '@nestjs/jwt';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'; // 👈 import the guard
+import { JwtStrategy } from 'src/utils/jwt.strategy';
 
 @Module({
   imports: [
@@ -12,8 +14,7 @@ import { JwtModule } from '@nestjs/jwt';
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || '1h' },
     }),
   ],
-
-  providers: [UserService],
+  providers: [UserService, JwtStrategy, JwtAuthGuard],
   controllers: [UserController],
 })
 export class UserModule {}

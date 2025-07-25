@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// This is your Prisma schema file.
+// Docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -12,6 +9,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model Admin {
   id        Int      @id @default(autoincrement())
   email     String   @unique
@@ -20,40 +18,44 @@ model Admin {
 }
 
 model User {
-  id               Int       @id @default(autoincrement())
-  email            String    @unique
-  password         String
+  id               Int              @id @default(autoincrement())
   name             String?
+  email            String           @unique
+  password         String
   phone            String?
-  role             UserRole  @default(PENDING)
+  role             String           @default("PENDING")
+  isApproved       Boolean          @default(false)
   accessExpiresAt  DateTime?
-  isApproved       Boolean   @default(false)
   paymentProofUrl  String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime?  @updatedAt
-  notifications  Notification[]
+  plan             MembershipPlan?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime?        @default(now()) // Safe for migration; later make it @updatedAt
+  notifications    Notification[]
 }
 
-enum UserRole {
-  PENDING
-  TIER1
-  TIER2
-  TIER3
+enum MembershipPlan {
+  LEVEL1
+  LEVEL2
+  LEVEL3
+  LEVEL4
   VIP
 }
 
 model Notification {
   id        Int      @id @default(autoincrement())
-  type      String   // e.g. "NEW_REGISTRATION"
-  message   String
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
+  type      String   // e.g., "NEW_PAYMENT_PROOF"
+  message   String
+  plan             MembershipPlan?
   createdAt DateTime @default(now())
-  read      Boolean  @default(false)
 }
 
-
-
-
- // npx prisma migrate dev --name user-auth
+model Faq {
+  id        Int      @id @default(autoincrement())
+  question  String
+  answer    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 

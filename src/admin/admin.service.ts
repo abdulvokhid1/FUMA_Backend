@@ -56,55 +56,12 @@ export class AdminService {
     return { access_token: token };
   }
 
-  async approveUser(userId: number, role: TierRole) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
-
-    if (user.isApproved) {
-      throw new BadRequestException('User already approved');
-    }
-
-    let accessExpiresAt: Date | null = null;
-    switch (role) {
-      case 'TIER1':
-        accessExpiresAt = addMonths(new Date(), 1);
-        break;
-      case 'TIER2':
-        accessExpiresAt = addMonths(new Date(), 2);
-        break;
-      case 'TIER3':
-        accessExpiresAt = addMonths(new Date(), 3);
-        break;
-      case 'VIP':
-        accessExpiresAt = null;
-        break;
-    }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        role,
-        isApproved: true,
-        accessExpiresAt,
-      },
-    });
-
-    return { message: `User approved as ${role}` };
-  }
-
   async getNotifications() {
     return this.prisma.notification.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         user: true,
       },
-    });
-  }
-
-  async markNotificationAsRead(id: number) {
-    return this.prisma.notification.update({
-      where: { id },
-      data: { read: true },
     });
   }
 }
