@@ -1,14 +1,11 @@
-import { IsEnum } from 'class-validator';
-
-export enum TierRole {
-  LEVEL1 = 'LEVEL1',
-  LEVEL2 = 'LEVEL2',
-  LEVEL3 = 'LEVEL3',
-  LEVEL4 = 'LEVEL4',
-  VIP = 'VIP',
-}
+import { IsEnum, IsOptional, IsDateString } from 'class-validator';
+import { MembershipPlan } from '@prisma/client';
 
 export class ApproveUserDto {
-  @IsEnum(TierRole)
-  role: TierRole;
+  @IsEnum(MembershipPlan)
+  plan: MembershipPlan;
+
+  @IsOptional()
+  @IsDateString()
+  accessExpiresAt?: string; // optional expiration date
 }

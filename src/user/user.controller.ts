@@ -48,6 +48,7 @@ export class UserController {
     if (!file) {
       throw new BadRequestException('결제 영수증 이미지가 필요합니다.');
     }
+
     return this.userService.submitMembership(user.id, dto, file);
   }
 }

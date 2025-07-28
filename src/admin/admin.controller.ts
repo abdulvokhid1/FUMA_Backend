@@ -9,6 +9,8 @@ import {
   UseGuards,
   Req,
   UnauthorizedException,
+  Patch,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
@@ -59,18 +61,33 @@ export class AdminController {
     };
   }
 
-  // @Post('approve-user/:id')
-  // approveUser(@Param('id') id: string, @Body() dto: ApproveUserDto) {
-  //   return this.adminService.approveUser(+id, dto.role);
-  // }
-
-  @Get('notifications')
-  getNotifications() {
-    return this.adminService.getNotifications();
+  @Patch('approve-user/:userId')
+  approveUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() dto: ApproveUserDto,
+  ) {
+    return this.adminService.approveUser(userId, dto);
   }
 
-  // @Post('notifications/:id/read')
-  // markAsRead(@Param('id') id: string) {
-  //   return this.adminService.markNotificationAsRead(+id);
-  // }
+  // ✅ Get all notifications (approved + pending)
+  @Get('notifications')
+  getAllNotifications() {
+    return this.adminService.getAllNotifications();
+  }
+
+  // ✅ Get only pending (unapproved) notifications
+  @Get('notifications/pending')
+  getPendingNotifications() {
+    return this.adminService.getNotificationsByStatus(false);
+  }
+
+  // ✅ Get only approved notifications
+  @Get('notifications/approved')
+  getApprovedNotifications() {
+    return this.adminService.getNotificationsByStatus(true);
+  }
+  @Patch('notifications/:id/mark-read')
+  markNotificationRead(@Param('id', ParseIntPipe) id: number) {
+    return this.adminService.markNotificationRead(id);
+  }
 }

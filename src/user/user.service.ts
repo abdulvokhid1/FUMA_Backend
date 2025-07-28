@@ -32,7 +32,6 @@ export class UserService {
         password: hash,
         name: dto.name,
         phone: dto.phone,
-        role: 'PENDING',
         isApproved: false,
         plan: null,
         paymentProofUrl: null,
@@ -59,7 +58,7 @@ export class UserService {
     const payload = {
       sub: user.id,
       email: user.email,
-      role: user.role,
+      plan: user.plan,
     };
 
     const token = await this.jwt.signAsync(payload);
@@ -75,7 +74,6 @@ export class UserService {
         email: true,
         name: true,
         phone: true,
-        role: true,
         plan: true,
         paymentProofUrl: true,
         createdAt: true,
@@ -100,25 +98,26 @@ export class UserService {
       throw new BadRequestException('결제 증빙 이미지를 업로드해주세요.');
     }
 
-    // Update user with plan and payment proof
+    // Update user's selected plan and set to pending
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         plan: dto.membershipPlan,
         paymentProofUrl: `/uploads/payment_proofs/${file.filename}`,
-        role: 'PENDING',
         isApproved: false,
         updatedAt: new Date(),
       },
     });
 
-    // Create admin notification
+    // Notify admin
     await this.prisma.notification.create({
       data: {
         type: 'NEW_PAYMENT_PROOF',
-        message: `📩 ${user.name}님이 '${dto.membershipPlan}' 결제를 제출했습니다.`,
+        message: `📩 ${user.name || user.email}님이 '${dto.membershipPlan}' 플랜 결제를 제출했습니다.`,
         userId: user.id,
-        plan: user.plan,
+        plan: dto.membershipPlan,
+        isRead: false,
+        isApproved: false,
       },
     });
 

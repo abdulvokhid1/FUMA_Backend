@@ -23,7 +23,6 @@ model User {
   email            String           @unique
   password         String
   phone            String?
-  role             String           @default("PENDING")
   isApproved       Boolean          @default(false)
   accessExpiresAt  DateTime?
   paymentProofUrl  String?
@@ -47,9 +46,12 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id])
   type      String   // e.g., "NEW_PAYMENT_PROOF"
   message   String
-  plan             MembershipPlan?
+  plan      MembershipPlan?
+  isRead    Boolean  @default(false)
+  isApproved Boolean @default(false)
   createdAt DateTime @default(now())
 }
+
 
 model Faq {
   id        Int      @id @default(autoincrement())
