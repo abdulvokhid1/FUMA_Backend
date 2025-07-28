@@ -11,11 +11,11 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto, LoginDto, SubmitMembershipDto } from './dto/user.dto';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { User } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { CurrentUser } from 'src/auth/current-user.decorator';
-import { multerOptions } from 'src/utils/multer-options';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { multerOptions } from '../utils/multer-options';
 
 @Controller('user')
 export class UserController {

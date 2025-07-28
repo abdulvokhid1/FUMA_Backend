@@ -8,7 +8,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto, SubmitMembershipDto } from './dto/user.dto';
-import { MembershipPlan } from '@prisma/client';
 
 @Injectable()
 export class UserService {

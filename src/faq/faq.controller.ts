@@ -11,8 +11,7 @@ import {
 } from '@nestjs/common';
 import { FaqService } from './faq.service';
 import { CreateFaqDto, UpdateFaqDto } from './dto/faq.dto';
-import { AuthGuard } from '@nestjs/passport';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 @Controller('admin')
 export class FaqController {
   constructor(private faqService: FaqService) {}

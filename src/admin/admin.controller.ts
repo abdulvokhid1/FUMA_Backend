@@ -16,9 +16,9 @@ import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
 import { AdminService } from './admin.service';
 import { ApproveUserDto } from './dto/approve-user.dto';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { PrismaService } from 'prisma/prisma.service';
-import { CurrentUser } from 'src/auth/current-user.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('admin')
 export class AdminController {
