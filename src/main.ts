@@ -9,7 +9,7 @@ dotenv.config({ path: `.env.${process.env.NODE_ENV || 'prod'}` });
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+  app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads/',
   });
 
@@ -18,7 +18,7 @@ async function bootstrap() {
 
   // ✅ Enable CORS
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001', // customize for prod
+    origin: process.env.FRONTEND_URL || ['http://localhost:3001'], // customize for prod
     credentials: true,
   });
 
@@ -32,6 +32,11 @@ async function bootstrap() {
   );
 
   // ✅ Start the app
+  app.use('/uploads', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // 💡 key for image rendering
+    next();
+  });
   const port = process.env.PORT || 3000;
   await app.listen(port);
   console.log(`🚀 Server running on http://localhost:${port}`);
