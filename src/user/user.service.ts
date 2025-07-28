@@ -76,6 +76,8 @@ export class UserService {
         phone: true,
         plan: true,
         paymentProofUrl: true,
+        isApproved: true,
+        accessExpiresAt: true,
         createdAt: true,
       },
     });
