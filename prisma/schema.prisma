@@ -1,6 +1,3 @@
-// This is your Prisma schema file.
-// Docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -18,40 +15,31 @@ model Admin {
 }
 
 model User {
-  id               Int              @id @default(autoincrement())
-  name             String?
-  email            String           @unique
-  password         String
-  phone            String?
-  isApproved       Boolean          @default(false)
-  accessExpiresAt  DateTime?
-  paymentProofUrl  String?
-  plan             MembershipPlan?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime?        @default(now()) // Safe for migration; later make it @updatedAt
-  notifications    Notification[]
-}
-
-enum MembershipPlan {
-  LEVEL1
-  LEVEL2
-  LEVEL3
-  LEVEL4
-  VIP
+  id              Int             @id @default(autoincrement())
+  email           String          @unique
+  password        String
+  name            String?
+  createdAt       DateTime        @default(now())
+  phone           String?
+  accessExpiresAt DateTime?
+  isApproved      Boolean         @default(false)
+  paymentProofUrl String?
+  plan            MembershipPlan?
+  updatedAt       DateTime?       @default(now())
+  notifications   Notification[]
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  type      String   // e.g., "NEW_PAYMENT_PROOF"
-  message   String
-  plan      MembershipPlan?
-  isRead    Boolean  @default(false)
-  isApproved Boolean @default(false)
-  createdAt DateTime @default(now())
+  id         Int             @id @default(autoincrement())
+  type       String
+  message    String
+  userId     Int
+  createdAt  DateTime        @default(now())
+  plan       MembershipPlan?
+  isApproved Boolean         @default(false)
+  isRead     Boolean         @default(false)
+  user       User            @relation(fields: [userId], references: [id])
 }
-
 
 model Faq {
   id        Int      @id @default(autoincrement())
@@ -61,3 +49,10 @@ model Faq {
   updatedAt DateTime @updatedAt
 }
 
+enum MembershipPlan {
+  LEVEL1
+  LEVEL2
+  LEVEL3
+  LEVEL4
+  VIP
+}
