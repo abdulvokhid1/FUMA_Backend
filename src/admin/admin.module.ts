@@ -4,7 +4,8 @@ import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { JwtStrategy } from '../utils/jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
-
+import * as dotenv from 'dotenv';
+dotenv.config();
 @Module({
   imports: [
     JwtModule.register({

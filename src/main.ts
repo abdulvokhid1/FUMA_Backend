@@ -4,9 +4,10 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import * as dotenv from 'dotenv';
 import { ConfigModule } from '@nestjs/config';
+import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.prod' });
+console.log('✅ JWT_SECRET:', process.env.JWT_SECRET);
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
