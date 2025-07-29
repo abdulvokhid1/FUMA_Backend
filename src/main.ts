@@ -18,7 +18,7 @@ async function bootstrap() {
 
   // ✅ Enable CORS
   app.enableCors({
-    origin: process.env.FRONTEND_URL || ['http://localhost:3000'], // customize for prod
+    origin: ['http://localhost:3000', 'https://fumatrade.net'],
     credentials: true,
   });
 
