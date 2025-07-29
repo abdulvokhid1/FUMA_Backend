@@ -5,12 +5,18 @@ import helmet from 'helmet';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as dotenv from 'dotenv';
+import { ConfigModule } from '@nestjs/config';
 dotenv.config({ path: '.env.prod' });
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads/',
+  });
+
+  ConfigModule.forRoot({
+    envFilePath: '.env.prod',
+    isGlobal: true,
   });
 
   // ✅ Enable security headers (Helmet)
