@@ -25,7 +25,11 @@ async function bootstrap() {
 
   // ✅ Enable CORS
   app.enableCors({
-    origin: ['http://localhost:3000', 'https://fumatrade.net'],
+    origin: [
+      'http://localhost:3000',
+      'https://fumatrade.net',
+      'https://fuma-front-end.vercel.app',
+    ],
     credentials: true,
   });
 
