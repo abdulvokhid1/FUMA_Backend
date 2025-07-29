@@ -3,9 +3,9 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { join } from 'path';
-import * as dotenv from 'dotenv';
 import { NestExpressApplication } from '@nestjs/platform-express';
-dotenv.config({ path: `.env.${process.env.NODE_ENV || 'prod'}` });
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.prod' });
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
