@@ -18,7 +18,7 @@ async function bootstrap() {
 
   // ✅ Enable CORS
   app.enableCors({
-    origin: process.env.FRONTEND_URL || ['http://localhost:3001'], // customize for prod
+    origin: process.env.FRONTEND_URL || ['http://localhost:3000'], // customize for prod
     credentials: true,
   });
 
@@ -37,7 +37,7 @@ async function bootstrap() {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // 💡 key for image rendering
     next();
   });
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 3001;
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server running on http://localhost:${port}`);
 }
