@@ -30,6 +30,7 @@ async function bootstrap() {
       'http://localhost:3000',
       'https://fumatrade.net',
       'https://fuma-front-end.vercel.app',
+      'https://fuma-trade.vercel.app',
     ],
     credentials: true,
   });
