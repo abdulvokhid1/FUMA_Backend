@@ -34,6 +34,7 @@ export class UserController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   getMe(@CurrentUser() user: User) {
+    console.log('Current User:', user);
     return this.userService.getMe(user.id);
   }
 

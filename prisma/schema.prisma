@@ -27,6 +27,7 @@ model User {
   plan            MembershipPlan?
   updatedAt       DateTime?       @default(now())
   notifications   Notification[]
+  hashedRefreshToken String?
 }
 
 model Notification {
