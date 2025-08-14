@@ -1,4 +1,3 @@
-import { MembershipPlan } from '@prisma/client';
 import {
   IsEmail,
   IsNotEmpty,
@@ -6,6 +5,7 @@ import {
   IsPhoneNumber,
   IsEnum,
 } from 'class-validator';
+import { MembershipPlan, PaymentMethod } from '@prisma/client';
 
 export class RegisterDto {
   @IsEmail({}, { message: 'Invalid email format' })
@@ -38,4 +38,7 @@ export class LoginDto {
 export class SubmitMembershipDto {
   @IsEnum(MembershipPlan, { message: '올바른 멤버십 플랜을 선택해주세요.' })
   membershipPlan: MembershipPlan;
+
+  @IsEnum(PaymentMethod, { message: '올바른 결제 수단을 선택해주세요.' })
+  paymentMethod: PaymentMethod;
 }

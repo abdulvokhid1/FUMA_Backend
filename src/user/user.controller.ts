@@ -8,6 +8,8 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ParseFilePipe,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto, LoginDto, SubmitMembershipDto } from './dto/user.dto';
@@ -16,6 +18,7 @@ import { User } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { multerOptions } from '../utils/multer-options';
+import { paymentsUploadOptions } from './upload.config';
 
 @Controller('user')
 export class UserController {
@@ -31,13 +34,40 @@ export class UserController {
     return this.userService.login(dto);
   }
 
-  @Get('me')
   @UseGuards(JwtAuthGuard)
+  @Get('me')
   getMe(@CurrentUser() user: User) {
     console.log('Current User:', user);
     return this.userService.getMe(user.id);
   }
+  // @Post('submit-membership')
+  // @UseGuards(JwtAuthGuard)
+  // @UseInterceptors(FileInterceptor('file', paymentsUploadOptions))
+  // async submitMembership(
+  //   @CurrentUser('sub') sub: number, // ← read JWT subject directly
+  //   @Body() dto: SubmitMembershipDto,
+  //   @UploadedFile(new ParseFilePipe({ fileIsRequired: true }))
+  //   file: Express.Multer.File,
+  // ) {
+  //   const userId = Number(sub);
+  //   if (!Number.isFinite(userId)) {
+  //     throw new UnauthorizedException('Invalid token');
+  //   }
+  //   return this.userService.submitMembership(userId, dto, file);
+  // }
 
+  // // GET /user/submissions (list my submissions)
+  // @Get('submissions')
+  // async listMySubmissions(@CurrentUser() user: User) {
+
+  //   return this.userService.listMySubmissions(user.id);
+  // }
+
+  // // GET /user/submissions/latest
+  // @Get('submissions/latest')
+  // async latestSubmission(@CurrentUser() user: User) {
+  //   return this.userService.latestSubmission(user.id);
+  // }
   @Post('submit-membership')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('paymentProof', multerOptions))
@@ -46,10 +76,8 @@ export class UserController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: SubmitMembershipDto,
   ) {
-    if (!file) {
+    if (!file)
       throw new BadRequestException('결제 영수증 이미지가 필요합니다.');
-    }
-
     return this.userService.submitMembership(user.id, dto, file);
   }
 }

@@ -13,22 +13,73 @@ model Admin {
   password  String
   createdAt DateTime @default(now())
 }
-
 model User {
-  id              Int             @id @default(autoincrement())
-  email           String          @unique
-  password        String
-  name            String?
-  createdAt       DateTime        @default(now())
-  phone           String?
-  accessExpiresAt DateTime?
-  isApproved      Boolean         @default(false)
-  paymentProofUrl String?
-  plan            MembershipPlan?
-  updatedAt       DateTime?       @default(now())
-  notifications   Notification[]
+  id               Int              @id @default(autoincrement())
+  email            String           @unique
+  password         String
+  name             String?
+  phone            String?
+  accessExpiresAt  DateTime?
+  isApproved       Boolean          @default(false)
+  paymentMethod    PaymentMethod?
+  paymentProofUrl  String?
+  role             Role             @default(USER)
+  plan             MembershipPlan?  // ← optional, no @default
+  notifications    Notification[]
   hashedRefreshToken String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  submissions      PaymentSubmission[]
+  reviewedSubs     PaymentSubmission[] @relation("ReviewedBy")
+
 }
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum MembershipPlan {
+  BASIC
+  PRO
+  VIP
+}
+enum PaymentMethod {
+  BANK_TRANSFER
+  USDT
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+
+
+model PaymentSubmission {
+  id               Int             @id @default(autoincrement())
+  userId           Int
+  user             User            @relation(fields: [userId], references: [id])
+
+  plan             MembershipPlan
+  paymentMethod    PaymentMethod
+  filePath         String
+  fileOriginalName String
+
+  status           SubmissionStatus @default(PENDING)
+  adminNote        String?
+
+  reviewedById     Int?
+  reviewedBy       User?           @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt       DateTime?
+
+  createdAt        DateTime        @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
 
 model Notification {
   id         Int             @id @default(autoincrement())
@@ -50,10 +101,7 @@ model Faq {
   updatedAt DateTime @updatedAt
 }
 
-enum MembershipPlan {
-  LEVEL1
-  LEVEL2
-  LEVEL3
-  LEVEL4
-  VIP
-}
+
+// npx prisma migrate reset --force --skip-seed
+// npx prisma migrate dev --name baseline_schema
+// npx prisma generate
