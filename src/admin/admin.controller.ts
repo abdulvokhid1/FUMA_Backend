@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
   Patch,
   ParseIntPipe,
+  Query,
 } from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
@@ -63,12 +64,6 @@ export class AdminController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('users')
-  getAllUsers() {
-    return this.adminService.getAllUsers();
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Get('notifications')
   getAllNotifications() {
     return this.adminService.getAllNotifications(); // Fetch submissions + user
@@ -86,33 +81,27 @@ export class AdminController {
     return this.adminService.rejectSubmission(id);
   }
 
-  // @Patch('approve-user/:userId')
-  // approveUser(
-  //   @Param('userId', ParseIntPipe) userId: number,
-  //   @Body() dto: ApproveUserDto,
-  // ) {
-  //   return this.adminService.approveUser(userId, dto);
-  // }
+  @UseGuards(JwtAuthGuard)
+  @Get('users')
+  getAllUsers() {
+    return this.adminService.getAllUsers();
+  }
 
-  // // ✅ Get all notifications (approved + pending)
-  // @Get('notifications')
-  // getAllNotifications() {
-  //   return this.adminService.getAllNotifications();
-  // }
+  @UseGuards(JwtAuthGuard)
+  @Get('users/approved')
+  getApprovedUsers() {
+    return this.adminService.getApprovedUsers();
+  }
 
-  // // ✅ Get only pending (unapproved) notifications
-  // @Get('notifications/pending')
-  // getPendingNotifications() {
-  //   return this.adminService.getNotificationsByStatus(false);
-  // }
+  @UseGuards(JwtAuthGuard)
+  @Get('users/rejected')
+  getRejectedUsers() {
+    return this.adminService.getRejectedUsers();
+  }
 
-  // // ✅ Get only approved notifications
-  // @Get('notifications/approved')
-  // getApprovedNotifications() {
-  //   return this.adminService.getNotificationsByStatus(true);
-  // }
-  // @Patch('notifications/:id/mark-read')
-  // markNotificationRead(@Param('id', ParseIntPipe) id: number) {
-  //   return this.adminService.markNotificationRead(id);
-  // }
+  @UseGuards(JwtAuthGuard)
+  @Get('users/pending')
+  getPendingUsers() {
+    return this.adminService.getPendingUsers();
+  }
 }

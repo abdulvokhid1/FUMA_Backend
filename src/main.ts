@@ -31,6 +31,7 @@ async function bootstrap() {
       'https://fumatrade.net',
       'https://fuma-front-end.vercel.app',
       'https://fuma-trade.vercel.app',
+      'https://fuma-trade-tgn1.vercel.app',
     ],
     credentials: true,
   });

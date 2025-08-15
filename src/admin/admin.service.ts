@@ -56,24 +56,6 @@ export class AdminService {
     return { access_token: token };
   }
 
-  async getAllUsers() {
-    return this.prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        plan: true,
-        paymentProofUrl: true,
-        isApproved: true,
-        accessExpiresAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-  }
-
   // Get all pending submissions
   // 2️⃣ Get All PENDING Submissions (Admin Dashboard)
   async getAllNotifications() {
@@ -96,145 +78,139 @@ export class AdminService {
   }
 
   // 3️⃣ Approve Submission (Admin)
-  async approveSubmission(id: number, reviewedById: number) {
-    const submission = await this.prisma.paymentSubmission.update({
-      where: { id },
+  async approveSubmission(submissionId: number, reviewedById: number) {
+    // Step 1: Find submission with user relation
+    const submission = await this.prisma.paymentSubmission.findUnique({
+      where: { id: submissionId },
+      include: { user: true },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('해당 결제 제출이 존재하지 않습니다.');
+    }
+
+    if (submission.status !== 'PENDING') {
+      throw new BadRequestException('이미 승인되었거나 거절된 제출입니다.');
+    }
+
+    // Step 2: Update submission status
+    await this.prisma.paymentSubmission.update({
+      where: { id: submissionId },
       data: {
         status: 'APPROVED',
         reviewedById,
         reviewedAt: new Date(),
       },
-      include: { user: true },
     });
 
+    // Step 3: Mark related notifications as approved + read
     await this.prisma.notification.updateMany({
-      where: { userId: submission.userId, plan: submission.plan },
-      data: { isApproved: true, isRead: true },
+      where: {
+        userId: submission.userId,
+        plan: submission.plan,
+      },
+      data: {
+        isApproved: true,
+        isRead: true,
+      },
     });
 
-    await this.prisma.user.update({
+    // Step 4: Update user approval status and access period
+    const updatedUser = await this.prisma.user.update({
       where: { id: submission.userId },
       data: {
         isApproved: true,
-        accessExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30일 접근 권한
+        accessExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
       },
     });
 
     return {
-      message: '승인 완료되었습니다.',
-      user: submission.user,
+      message: '사용자 승인 완료',
+      user: updatedUser,
     };
   }
 
-  async rejectSubmission(id: number) {
-    return this.prisma.paymentSubmission.update({
-      where: { id },
+  async rejectSubmission(submissionId: number) {
+    const submission = await this.prisma.paymentSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('해당 결제 제출이 존재하지 않습니다.');
+    }
+
+    if (submission.status !== 'PENDING') {
+      throw new BadRequestException('이미 승인되었거나 거절된 제출입니다.');
+    }
+
+    const updatedSubmission = await this.prisma.paymentSubmission.update({
+      where: { id: submissionId },
       data: {
         status: 'REJECTED',
         reviewedAt: new Date(),
       },
     });
+
+    return {
+      message: '사용자 제출이 거절되었습니다.',
+      submission: updatedSubmission,
+    };
   }
 
-  // async getNotifications() {
-  //   return this.prisma.notification.findMany({
-  //     orderBy: { createdAt: 'desc' },
-  //     include: {
-  //       user: true,
-  //     },
-  //   });
-  // }
+  async getAllUsers() {
+    return this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        plan: true,
+        paymentProofUrl: true,
+        isApproved: true,
+        accessExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+  // service/admin.service.ts
+  async getApprovedUsers() {
+    return this.prisma.user.findMany({
+      where: {
+        submissions: {
+          some: {
+            status: 'APPROVED',
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
-  // async approveUser(userId: number, dto: ApproveUserDto) {
-  //   const user = await this.prisma.user.findUnique({
-  //     where: { id: userId },
-  //   });
+  async getRejectedUsers() {
+    return this.prisma.user.findMany({
+      where: {
+        submissions: {
+          some: {
+            status: 'REJECTED',
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
-  //   if (!user) {
-  //     throw new NotFoundException('유저를 찾을 수 없습니다.');
-  //   }
-
-  //   // ✅ Step 1: Approve the user
-  //   await this.prisma.user.update({
-  //     where: { id: userId },
-  //     data: {
-  //       plan: dto.plan,
-  //       isApproved: true,
-  //       accessExpiresAt: dto.accessExpiresAt
-  //         ? new Date(dto.accessExpiresAt)
-  //         : null,
-  //       updatedAt: new Date(),
-  //     },
-  //   });
-
-  //   // ✅ Step 2: Update related notification(s) to mark as read and approved
-  //   await this.prisma.notification.updateMany({
-  //     where: {
-  //       userId: userId,
-  //       type: 'NEW_PAYMENT_PROOF',
-  //       isRead: false,
-  //       isApproved: false,
-  //     },
-  //     data: {
-  //       isRead: true,
-  //       isApproved: true,
-  //     },
-  //   });
-
-  //   return {
-  //     message: `${user.name || user.email}님이 ${dto.plan} 플랜으로 승인되었습니다.`,
-  //   };
-  // }
-
-  // // Optional: status-based notifications fetch
-  // async getNotificationsByStatus(approved: boolean) {
-  //   return this.prisma.notification.findMany({
-  //     where: {
-  //       type: 'NEW_PAYMENT_PROOF',
-  //       isApproved: approved,
-  //     },
-  //     orderBy: { createdAt: 'desc' },
-  //     include: {
-  //       user: {
-  //         select: {
-  //           id: true,
-  //           name: true,
-  //           email: true,
-  //           phone: true,
-  //           paymentProofUrl: true,
-  //           plan: true,
-  //           isApproved: true,
-  //           createdAt: true,
-  //         },
-  //       },
-  //     },
-  //   });
-  // }
-
-  // async getAllNotifications() {
-  //   return this.prisma.notification.findMany({
-  //     orderBy: { createdAt: 'desc' },
-  //     include: {
-  //       user: {
-  //         select: {
-  //           id: true,
-  //           name: true,
-  //           email: true,
-  //           phone: true,
-  //           paymentProofUrl: true,
-  //           plan: true,
-  //           isApproved: true,
-  //           createdAt: true,
-  //         },
-  //       },
-  //     },
-  //   });
-  // }
-
-  // async markNotificationRead(id: number) {
-  //   return this.prisma.notification.update({
-  //     where: { id },
-  //     data: { isRead: true },
-  //   });
-  // }
+  async getPendingUsers() {
+    return this.prisma.user.findMany({
+      where: {
+        submissions: {
+          some: {
+            status: 'PENDING',
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }
