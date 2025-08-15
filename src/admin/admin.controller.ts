@@ -18,8 +18,8 @@ import { LoginDto } from './dto/login-admin.dto';
 import { AdminService } from './admin.service';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CurrentUser } from 'src/auth/current-user.decorator';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { User } from '@prisma/client';
 
 @Controller('admin')
