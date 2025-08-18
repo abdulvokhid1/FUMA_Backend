@@ -21,6 +21,9 @@ model User {
   phone            String?
   accessExpiresAt  DateTime?
   isApproved       Boolean          @default(false)
+  isPayed          Boolean          @default(false)
+
+  isRejected       Boolean          @default(false)
   paymentMethod    PaymentMethod?
   paymentProofUrl  String?
   role             Role             @default(USER)
@@ -40,6 +43,7 @@ enum Role {
 }
 
 enum MembershipPlan {
+  플랜 없음
   BASIC
   PRO
   VIP
@@ -89,6 +93,7 @@ model Notification {
   createdAt  DateTime        @default(now())
   plan       MembershipPlan?
   isApproved Boolean         @default(false)
+  isPayed    Boolean         @default(false)
   isRead     Boolean         @default(false)
   user       User            @relation(fields: [userId], references: [id])
 }

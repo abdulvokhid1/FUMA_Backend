@@ -13,6 +13,13 @@ import {
   SubmissionStatus,
   Role,
 } from '@prisma/client';
+import {
+  PLAN_FEATURES,
+  Features,
+  Entitlements,
+  Plan,
+} from '../libs/shared/entitlements';
+
 import { RegisterDto } from './dto/user.dto';
 import { SubmitMembershipDto } from './dto/user.dto';
 
@@ -39,6 +46,7 @@ export class UserService {
         name: dto.name,
         phone: dto.phone,
         isApproved: false,
+        isPayed: false,
         plan: null,
         paymentProofUrl: null,
         accessExpiresAt: null,
@@ -82,6 +90,7 @@ export class UserService {
         plan: true,
         paymentProofUrl: true,
         isApproved: true,
+        isPayed: true,
         accessExpiresAt: true,
         createdAt: true,
       },
@@ -118,6 +127,7 @@ export class UserService {
         plan: dto.membershipPlan,
         paymentProofUrl: filePath,
         isApproved: false,
+        isPayed: false,
         updatedAt: new Date(),
       },
     });
@@ -130,9 +140,78 @@ export class UserService {
         plan: dto.membershipPlan,
         isRead: false,
         isApproved: false,
+        isPayed: false,
       },
     });
 
     return { message: '결제가 제출되었습니다. 관리자 승인 대기 중입니다.' };
+  }
+
+  async buildMypageEntitlements(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        paymentProofUrl: true,
+        createdAt: true,
+        updatedAt: true,
+        plan: true, // MembershipPlan | null
+        isApproved: true, // boolean
+        isPayed: true, // boolean
+        accessExpiresAt: true, // Date | null
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    // If plan is null, treat as BASIC *view* (no Pro/VIP features)
+    const plan: MembershipPlan = user.plan ?? 'BASIC';
+
+    // Active if approved AND (no expiry or expiry in future)
+    const now = new Date();
+    const notExpired =
+      !user.accessExpiresAt || user.accessExpiresAt.getTime() > now.getTime();
+    const active = !!user.isApproved && notExpired;
+
+    // Feature flags by plan (raw)
+    const rawAccess = {
+      SIGNAL_CHARTS: plan === 'BASIC' || plan === 'PRO' || plan === 'VIP',
+      TELEGRAM_BASIC: plan === 'BASIC' || plan === 'PRO' || plan === 'VIP',
+      MARTINGALE_EA: plan === 'PRO' || plan === 'VIP',
+      TELEGRAM_PRO: plan === 'PRO' || plan === 'VIP',
+      TELEGRAM_VIP: plan === 'VIP',
+      CONSULT_1ON1: plan === 'BASIC' || plan === 'PRO' || plan === 'VIP',
+    };
+
+    // Final access is also gated by account activation
+    const access = Object.fromEntries(
+      Object.entries(rawAccess).map(([k, v]) => [k, active && !!v]),
+    ) as Record<string, boolean>;
+
+    // Quotas
+    const quotas: any = {};
+    if (plan === 'VIP') {
+      quotas.CONSULT_1ON1 = { monthlyLimit: Number.POSITIVE_INFINITY, used: 0 };
+    } else if (plan === 'PRO') {
+      quotas.CONSULT_1ON1 = { monthlyLimit: 4, used: 0 };
+    } else {
+      quotas.CONSULT_1ON1 = { monthlyLimit: 2, used: 0 };
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      plan,
+      isApproved: !!user.isApproved,
+      isPayed: !!user.isPayed,
+      accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
+      access,
+      quotas,
+    };
   }
 }

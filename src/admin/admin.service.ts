@@ -111,6 +111,7 @@ export class AdminService {
       },
       data: {
         isApproved: true,
+        isPayed: true,
         isRead: true,
       },
     });
@@ -120,6 +121,7 @@ export class AdminService {
       where: { id: submission.userId },
       data: {
         isApproved: true,
+        isPayed: true,
         accessExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
       },
     });

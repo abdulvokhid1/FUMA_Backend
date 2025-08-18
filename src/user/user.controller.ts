@@ -53,4 +53,19 @@ export class UserController {
       throw new BadRequestException('결제 영수증 이미지가 필요합니다.');
     return this.userService.submitMembership(user.id, dto, file);
   }
+  @UseGuards(JwtAuthGuard)
+  @Get('mypage')
+  async getMypage(@Req() req: any) {
+    // req.user should be populated by JwtAuthGuard/strategy
+    // Fallbacks added to avoid 500s if strategy shape differs
+    const userId: number =
+      req.user?.id ??
+      req.user?.sub ?? // many JWT strategies put id in 'sub'
+      (() => {
+        throw new Error('Authenticated user id not found on request');
+      })();
+
+    const me = await this.userService.buildMypageEntitlements(userId);
+    return { me }; // ← matches the frontend type: { me: Entitlements }
+  }
 }
