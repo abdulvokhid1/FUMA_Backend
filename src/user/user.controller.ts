@@ -40,34 +40,7 @@ export class UserController {
     console.log('Current User:', user);
     return this.userService.getMe(user.id);
   }
-  // @Post('submit-membership')
-  // @UseGuards(JwtAuthGuard)
-  // @UseInterceptors(FileInterceptor('file', paymentsUploadOptions))
-  // async submitMembership(
-  //   @CurrentUser('sub') sub: number, // ← read JWT subject directly
-  //   @Body() dto: SubmitMembershipDto,
-  //   @UploadedFile(new ParseFilePipe({ fileIsRequired: true }))
-  //   file: Express.Multer.File,
-  // ) {
-  //   const userId = Number(sub);
-  //   if (!Number.isFinite(userId)) {
-  //     throw new UnauthorizedException('Invalid token');
-  //   }
-  //   return this.userService.submitMembership(userId, dto, file);
-  // }
 
-  // // GET /user/submissions (list my submissions)
-  // @Get('submissions')
-  // async listMySubmissions(@CurrentUser() user: User) {
-
-  //   return this.userService.listMySubmissions(user.id);
-  // }
-
-  // // GET /user/submissions/latest
-  // @Get('submissions/latest')
-  // async latestSubmission(@CurrentUser() user: User) {
-  //   return this.userService.latestSubmission(user.id);
-  // }
   @Post('submit-membership')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('paymentProof', multerOptions))
