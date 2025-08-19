@@ -22,7 +22,6 @@ model User {
   accessExpiresAt  DateTime?
   isApproved       Boolean          @default(false)
   isPayed          Boolean          @default(false)
-
   isRejected       Boolean          @default(false)
   paymentMethod    PaymentMethod?
   paymentProofUrl  String?
@@ -43,7 +42,6 @@ enum Role {
 }
 
 enum MembershipPlan {
-  플랜 없음
   BASIC
   PRO
   VIP
