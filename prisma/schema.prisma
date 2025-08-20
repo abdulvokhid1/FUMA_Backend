@@ -42,6 +42,7 @@ enum Role {
 }
 
 enum MembershipPlan {
+  NOMEMBERSHIP
   BASIC
   PRO
   VIP
@@ -105,6 +106,4 @@ model Faq {
 }
 
 
-// npx prisma migrate reset --force --skip-seed
-// npx prisma migrate dev --name baseline_schema
-// npx prisma generate
+

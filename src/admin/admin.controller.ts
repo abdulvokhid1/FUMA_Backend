@@ -7,26 +7,21 @@ import {
   Param,
   Get,
   UseGuards,
-  Req,
   UnauthorizedException,
-  Patch,
   ParseIntPipe,
-  Query,
 } from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
 import { AdminService } from './admin.service';
-import { ApproveUserDto } from './dto/approve-user.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { User } from '@prisma/client';
 
 @Controller('admin')
 export class AdminController {
   constructor(
-    private adminService: AdminService,
-    private prisma: PrismaService,
+    private readonly adminService: AdminService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post('register')
@@ -43,17 +38,15 @@ export class AdminController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getMe(@CurrentUser() user: any) {
-    if (user.role !== 'admin') {
+    // Accept 'admin' | 'ADMIN' defensively
+    if (!user?.role || String(user.role).toLowerCase() !== 'admin') {
       throw new UnauthorizedException('Admin 권한이 없습니다.');
     }
 
     const admin = await this.prisma.admin.findUnique({
       where: { id: user.id },
     });
-
-    if (!admin) {
-      throw new UnauthorizedException('Admin not found');
-    }
+    if (!admin) throw new UnauthorizedException('Admin not found');
 
     return {
       id: admin.id,
@@ -65,43 +58,56 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard)
   @Get('notifications')
-  getAllNotifications() {
-    return this.adminService.getAllNotifications(); // Fetch submissions + user
+  getAllNotifications(@CurrentUser() user: any) {
+    this.adminService.assertAdmin(user);
+    return this.adminService.getAllNotifications();
   }
 
-  // Admin Approves Submission
   @UseGuards(JwtAuthGuard)
   @Post('approve/:id')
-  approveSubmission(@Param('id') id: number, @CurrentUser() admin: User) {
+  approveSubmission(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() admin: any,
+  ) {
+    this.adminService.assertAdmin(admin);
     return this.adminService.approveSubmission(id, admin.id);
   }
+
   @UseGuards(JwtAuthGuard)
   @Post('reject/:id')
-  rejectSubmission(@Param('id') id: number) {
+  rejectSubmission(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() admin: any,
+  ) {
+    this.adminService.assertAdmin(admin);
     return this.adminService.rejectSubmission(id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('users')
-  getAllUsers() {
+  getAllUsers(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
     return this.adminService.getAllUsers();
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('users/approved')
-  getApprovedUsers() {
+  getApprovedUsers(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
     return this.adminService.getApprovedUsers();
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('users/rejected')
-  getRejectedUsers() {
+  getRejectedUsers(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
     return this.adminService.getRejectedUsers();
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('users/pending')
-  getPendingUsers() {
+  getPendingUsers(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
     return this.adminService.getPendingUsers();
   }
 }

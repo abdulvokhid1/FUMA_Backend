@@ -4,12 +4,9 @@ import {
   Body,
   UseGuards,
   Get,
-  Req,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
-  ParseFilePipe,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto, LoginDto, SubmitMembershipDto } from './dto/user.dto';
@@ -18,7 +15,6 @@ import { User } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { multerOptions } from '../utils/multer-options';
-import { paymentsUploadOptions } from './upload.config';
 
 @Controller('user')
 export class UserController {
@@ -37,12 +33,11 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   getMe(@CurrentUser() user: User) {
-    console.log('Current User:', user);
     return this.userService.getMe(user.id);
   }
 
-  @Post('submit-membership')
   @UseGuards(JwtAuthGuard)
+  @Post('submit-membership')
   @UseInterceptors(FileInterceptor('paymentProof', multerOptions))
   async submitMembership(
     @CurrentUser() user: User,
@@ -53,19 +48,17 @@ export class UserController {
       throw new BadRequestException('결제 영수증 이미지가 필요합니다.');
     return this.userService.submitMembership(user.id, dto, file);
   }
+
   @UseGuards(JwtAuthGuard)
   @Get('mypage')
-  async getMypage(@Req() req: any) {
-    // req.user should be populated by JwtAuthGuard/strategy
-    // Fallbacks added to avoid 500s if strategy shape differs
-    const userId: number =
-      req.user?.id ??
-      req.user?.sub ?? // many JWT strategies put id in 'sub'
-      (() => {
-        throw new Error('Authenticated user id not found on request');
-      })();
+  async getMypage(@CurrentUser() user: User) {
+    const me = await this.userService.buildMypageEntitlements(user.id);
+    return { me }; // matches frontend: { me: Entitlements }
+  }
 
-    const me = await this.userService.buildMypageEntitlements(userId);
-    return { me }; // ← matches the frontend type: { me: Entitlements }
+  @UseGuards(JwtAuthGuard)
+  @Get('submissions/latest')
+  async latestSubmission(@CurrentUser() user: User) {
+    return this.userService.latestSubmission(user.id);
   }
 }
