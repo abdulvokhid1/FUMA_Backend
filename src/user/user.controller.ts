@@ -7,6 +7,8 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto, LoginDto, SubmitMembershipDto } from './dto/user.dto';
@@ -60,5 +62,19 @@ export class UserController {
   @Get('submissions/latest')
   async latestSubmission(@CurrentUser() user: User) {
     return this.userService.latestSubmission(user.id);
+  }
+  @Post('refresh')
+  async refresh(@Body('refresh_token') refreshToken: string) {
+    return this.userService.refreshTokens(refreshToken);
+  }
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@CurrentUser() user: User) {
+    return this.userService.logout(user.id);
+  }
+
+  @Get('plans')
+  getActivePlans() {
+    return this.userService.getActivePlans();
   }
 }

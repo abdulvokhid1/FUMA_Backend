@@ -7,35 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Admin {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
-}
-model User {
-  id               Int              @id @default(autoincrement())
-  email            String           @unique
-  password         String
-  name             String?
-  phone            String?
-  accessExpiresAt  DateTime?
-  isApproved       Boolean          @default(false)
-  isPayed          Boolean          @default(false)
-  isRejected       Boolean          @default(false)
-  paymentMethod    PaymentMethod?
-  paymentProofUrl  String?
-  role             Role             @default(USER)
-  plan             MembershipPlan?  // ← optional, no @default
-  notifications    Notification[]
-  hashedRefreshToken String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  submissions      PaymentSubmission[]
-  reviewedSubs     PaymentSubmission[] @relation("ReviewedBy")
-
-}
-
 enum Role {
   USER
   ADMIN
@@ -47,6 +18,7 @@ enum MembershipPlan {
   PRO
   VIP
 }
+
 enum PaymentMethod {
   BANK_TRANSFER
   USDT
@@ -58,43 +30,72 @@ enum SubmissionStatus {
   REJECTED
 }
 
+/**
+ * ========== Models ==========
+ */
 
+model Admin {
+  id                  Int                 @id @default(autoincrement())
+  email               String              @unique
+  password            String
+  createdAt           DateTime            @default(now())
+  logs                AdminLog[]
+  reviewedSubmissions PaymentSubmission[]
+}
+
+model User {
+  id                 Int             @id @default(autoincrement())
+  email              String          @unique
+  password           String
+  name               String?
+  phone              String?
+  plan               MembershipPlan?
+  isApproved         Boolean         @default(false)
+  isPayed            Boolean         @default(false)
+  accessExpiresAt    DateTime?
+  paymentMethod      PaymentMethod?
+  paymentProofUrl    String?
+  hashedRefreshToken String?
+  role               Role            @default(USER)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  submissions   PaymentSubmission[]
+  notifications Notification[]
+}
 
 model PaymentSubmission {
-  id               Int             @id @default(autoincrement())
-  userId           Int
-  user             User            @relation(fields: [userId], references: [id])
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
 
   plan             MembershipPlan
   paymentMethod    PaymentMethod
   filePath         String
   fileOriginalName String
-
   status           SubmissionStatus @default(PENDING)
   adminNote        String?
-
   reviewedById     Int?
-  reviewedBy       User?           @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedBy       Admin?           @relation(fields: [reviewedById], references: [id])
   reviewedAt       DateTime?
 
-  createdAt        DateTime        @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([status])
 }
-
 
 model Notification {
   id         Int             @id @default(autoincrement())
   type       String
   message    String
   userId     Int
-  createdAt  DateTime        @default(now())
+  user       User            @relation(fields: [userId], references: [id])
   plan       MembershipPlan?
   isApproved Boolean         @default(false)
   isPayed    Boolean         @default(false)
   isRead     Boolean         @default(false)
-  user       User            @relation(fields: [userId], references: [id])
+  createdAt  DateTime        @default(now())
 }
 
 model Faq {
@@ -105,5 +106,39 @@ model Faq {
   updatedAt DateTime @updatedAt
 }
 
+/**
+ * ========== NEW MODELS ==========
+ */
 
+model MembershipPlanMeta {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique // e.g., BASIC, PRO
+  label        String // Display title
+  description  String?
+  price        Int // In cents or KRW
+  durationDays Int
+  features     Json
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
 
+model AdminLog {
+  id           Int      @id @default(autoincrement())
+  adminId      Int
+  admin        Admin    @relation(fields: [adminId], references: [id])
+  action       String
+  targetUserId Int?
+  submissionId Int?
+  note         String?
+  createdAt    DateTime @default(now())
+}
+
+model JobQueue {
+  id          Int       @id @default(autoincrement())
+  type        String // "EXPIRY_REMINDER", etc.
+  payload     Json
+  scheduledAt DateTime
+  processedAt DateTime?
+  status      String // PENDING, COMPLETED, FAILED
+  createdAt   DateTime  @default(now())
+}

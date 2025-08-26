@@ -58,20 +58,103 @@ export class UserService {
     const valid = await bcrypt.compare(dto.password, user.password);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
-    const payload = { sub: user.id, email: user.email, plan: user.plan };
-    const token = await this.jwt.signAsync(payload);
-    return { access_token: token };
+    const latestApproved = await this.prisma.paymentSubmission.findFirst({
+      where: { userId: user.id, status: 'APPROVED' },
+      orderBy: { createdAt: 'desc' },
+      select: { plan: true },
+    });
+
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      plan: latestApproved?.plan ?? 'NOMEMBERSHIP',
+    };
+
+    // ✅ 1h access token
+    const accessToken = await this.jwt.signAsync(payload, {
+      expiresIn: '1h',
+    });
+
+    // ✅ 7d refresh token
+    const refreshToken = await this.jwt.signAsync(payload, {
+      expiresIn: '7d',
+    });
+
+    // ✅ Hash and store the refresh token
+    const hashedRefresh = await bcrypt.hash(refreshToken, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { hashedRefreshToken: hashedRefresh },
+    });
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    };
+  }
+
+  async refreshTokens(refreshToken: string) {
+    if (!refreshToken) {
+      throw new UnauthorizedException('리프레시 토큰이 없습니다.');
+    }
+
+    try {
+      const payload = await this.jwt.verifyAsync(refreshToken);
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+      });
+
+      if (!user || !user.hashedRefreshToken) {
+        throw new UnauthorizedException('유저가 없거나 토큰이 없습니다.');
+      }
+
+      const isValid = await bcrypt.compare(
+        refreshToken,
+        user.hashedRefreshToken,
+      );
+      if (!isValid) {
+        throw new UnauthorizedException('리프레시 토큰이 유효하지 않습니다.');
+      }
+
+      // ✅ Issue new access token
+      const latestApproved = await this.prisma.paymentSubmission.findFirst({
+        where: { userId: user.id, status: 'APPROVED' },
+        orderBy: { createdAt: 'desc' },
+        select: { plan: true },
+      });
+
+      const newAccessToken = await this.jwt.signAsync(
+        {
+          sub: user.id,
+          email: user.email,
+          plan: latestApproved?.plan ?? 'NOMEMBERSHIP',
+        },
+        { expiresIn: '1h' },
+      );
+
+      return { access_token: newAccessToken };
+    } catch (err) {
+      throw new UnauthorizedException(
+        '리프레시 토큰이 만료되었거나 잘못되었습니다.',
+      );
+    }
+  }
+  async logout(userId: number) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { hashedRefreshToken: null },
+    });
+    return { message: '로그아웃 완료' };
   }
 
   async getMe(userId: number) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         email: true,
         name: true,
         phone: true,
-        plan: true,
         paymentProofUrl: true,
         isApproved: true,
         isPayed: true,
@@ -79,6 +162,21 @@ export class UserService {
         createdAt: true,
       },
     });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const latestApproved = await this.prisma.paymentSubmission.findFirst({
+      where: { userId, status: 'APPROVED' },
+      orderBy: { createdAt: 'desc' },
+      select: { plan: true },
+    });
+
+    const planName = latestApproved?.plan ?? 'NOMEMBERSHIP';
+
+    return {
+      ...user,
+      plan: planName, // ✅ Injected dynamically
+    };
   }
 
   /** Latest submission for gating the UI */
@@ -97,20 +195,32 @@ export class UserService {
     dto: SubmitMembershipDto,
     file: Express.Multer.File,
   ) {
-    // normalize enums defensively (frontend already sends UPPERCASE)
-    const plan = String(dto.membershipPlan).toUpperCase() as MembershipPlan;
-    const method = String(dto.paymentMethod).toUpperCase() as PaymentMethod;
-
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('유저를 찾을 수 없습니다.');
+    // 1) Validate file
     if (!file)
       throw new BadRequestException('결제 증빙 이미지를 업로드해주세요.');
-
     const filePath = `/uploads/payment_proofs/${file.filename}`;
 
-    // Single transaction: guard → create submission → update user → notify
+    // 2) Normalize and fetch plan meta
+    const planName = String(dto.membershipPlan).toUpperCase() as MembershipPlan;
+    const method = String(dto.paymentMethod).toUpperCase() as PaymentMethod;
+
+    const planMeta = await this.prisma.membershipPlanMeta.findUnique({
+      where: { name: planName },
+    });
+
+    if (!planMeta || !planMeta.isActive) {
+      throw new BadRequestException(
+        '선택한 플랜이 존재하지 않거나 비활성화되었습니다.',
+      );
+    }
+
+    // 3) Ensure user exists
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('유저를 찾을 수 없습니다.');
+
+    // 4) Atomic transaction
     await this.prisma.$transaction(async (tx) => {
-      // Guard: prevent multiple pending
+      // Guard: single pending submission
       const existingPending = await tx.paymentSubmission.findFirst({
         where: { userId, status: SubmissionStatus.PENDING },
         select: { id: true },
@@ -119,34 +229,36 @@ export class UserService {
         throw new BadRequestException('이미 검토 중인 결제 제출이 있습니다.');
       }
 
+      // Create submission
       await tx.paymentSubmission.create({
         data: {
           userId,
-          plan,
-          paymentMethod: method,
+          plan: planName, // Prisma enum
+          paymentMethod: method, // Prisma enum
           filePath,
           fileOriginalName: file.originalname,
           status: SubmissionStatus.PENDING,
         },
       });
 
+      // Update user snapshot for UI (no expiry yet; set on approval)
       await tx.user.update({
         where: { id: userId },
         data: {
-          plan,
+          paymentMethod: method,
           paymentProofUrl: filePath,
           isApproved: false,
           isPayed: false,
-          updatedAt: new Date(),
         },
       });
 
+      // Optional: notify admins (your existing Notification create)
       await tx.notification.create({
         data: {
-          type: 'NEW_PAYMENT_PROOF',
-          message: `📩 ${user.name || user.email}님이 '${plan}' 플랜을 ${method} 결제로 제출했습니다.`,
           userId,
-          plan,
+          type: 'NEW_PAYMENT_PROOF',
+          message: `📩 ${user.name || user.email}님이 '${planName}' 플랜 결제를 제출했습니다.`,
+          plan: planName,
           isRead: false,
           isApproved: false,
           isPayed: false,
@@ -169,41 +281,69 @@ export class UserService {
         paymentProofUrl: true,
         createdAt: true,
         updatedAt: true,
-        plan: true, // MembershipPlan | null
-        isApproved: true, // boolean
-        isPayed: true, // boolean
-        accessExpiresAt: true, // Date | null
+        isApproved: true,
+        isPayed: true,
+        accessExpiresAt: true,
       },
     });
     if (!user) throw new NotFoundException('User not found');
 
-    const plan: MembershipPlan = user.plan ?? 'NOMEMBERSHIP';
+    const latestApproved = await this.prisma.paymentSubmission.findFirst({
+      where: { userId, status: 'APPROVED' },
+      orderBy: { createdAt: 'desc' },
+      select: { plan: true },
+    });
+
+    const planName = latestApproved?.plan ?? 'NOMEMBERSHIP';
+
+    // Then use planName as usual
+    const planMeta = latestApproved?.plan
+      ? await this.prisma.membershipPlanMeta.findUnique({
+          where: { name: latestApproved.plan },
+        })
+      : null;
 
     const now = new Date();
     const notExpired =
       !user.accessExpiresAt || user.accessExpiresAt.getTime() > now.getTime();
     const active = !!user.isApproved && notExpired;
 
-    const rawAccess = {
-      SIGNAL_CHARTS: plan === 'BASIC' || plan === 'PRO' || plan === 'VIP',
-      TELEGRAM_BASIC: plan === 'BASIC' || plan === 'PRO' || plan === 'VIP',
-      MARTINGALE_EA: plan === 'PRO' || plan === 'VIP',
-      TELEGRAM_PRO: plan === 'PRO' || plan === 'VIP',
-      TELEGRAM_VIP: plan === 'VIP',
-      CONSULT_1ON1: plan === 'BASIC' || plan === 'PRO' || plan === 'VIP',
+    // Feature flags from DB (fallback to all false if no plan or meta)
+    const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
+
+    const rawAccess: Record<string, boolean> = {
+      SIGNAL_CHARTS: !!metaFeatures.SIGNAL_CHARTS,
+      TELEGRAM_BASIC: !!metaFeatures.TELEGRAM_BASIC,
+      MARTINGALE_EA: !!metaFeatures.MARTINGALE_EA,
+      TELEGRAM_PRO: !!metaFeatures.TELEGRAM_PRO,
+      TELEGRAM_VIP: !!metaFeatures.TELEGRAM_VIP,
+      CONSULT_1ON1: !!metaFeatures.CONSULT_1ON1,
     };
 
+    // Gate by active state
     const access = Object.fromEntries(
-      Object.entries(rawAccess).map(([k, v]) => [k, active && !!v]),
+      Object.entries(rawAccess).map(([k, v]) => [k, active && v]),
     ) as Record<string, boolean>;
 
+    // Quotas — prefer DB-driven; fallback to your previous plan rules
     const quotas: Record<string, any> = {};
-    if (plan === 'VIP') {
-      quotas.CONSULT_1ON1 = { monthlyLimit: Number.POSITIVE_INFINITY, used: 0 };
-    } else if (plan === 'PRO') {
-      quotas.CONSULT_1ON1 = { monthlyLimit: 4, used: 0 };
+    const consultLimitFromMeta = Number.isFinite(metaFeatures.CONSULT_LIMIT)
+      ? Number(metaFeatures.CONSULT_LIMIT)
+      : undefined;
+
+    if (consultLimitFromMeta !== undefined) {
+      quotas.CONSULT_1ON1 = { monthlyLimit: consultLimitFromMeta, used: 0 };
     } else {
-      quotas.CONSULT_1ON1 = { monthlyLimit: 2, used: 0 };
+      // Fallback to old logic by plan tiers
+      if (planName === 'VIP')
+        quotas.CONSULT_1ON1 = {
+          monthlyLimit: Number.POSITIVE_INFINITY,
+          used: 0,
+        };
+      else if (planName === 'PRO')
+        quotas.CONSULT_1ON1 = { monthlyLimit: 4, used: 0 };
+      else if (planName === 'BASIC')
+        quotas.CONSULT_1ON1 = { monthlyLimit: 2, used: 0 };
     }
 
     return {
@@ -214,12 +354,20 @@ export class UserService {
       paymentProofUrl: user.paymentProofUrl ?? null,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
-      plan,
+      plan: planName,
       isApproved: !!user.isApproved,
       isPayed: !!user.isPayed,
       accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
       access,
       quotas,
     };
+  }
+  async getActivePlans() {
+    const plans = await this.prisma.membershipPlanMeta.findMany({
+      where: { isActive: true },
+      orderBy: { price: 'asc' },
+    });
+
+    return { plans };
   }
 }

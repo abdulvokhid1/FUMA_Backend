@@ -9,6 +9,10 @@ import {
   UseGuards,
   UnauthorizedException,
   ParseIntPipe,
+  UsePipes,
+  ValidationPipe,
+  Patch,
+  Delete,
 } from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
@@ -16,6 +20,7 @@ import { AdminService } from './admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CreatePlanDto, TogglePlanDto, UpdatePlanDto } from './dto/plan.dto';
 
 @Controller('admin')
 export class AdminController {
@@ -68,9 +73,10 @@ export class AdminController {
   approveSubmission(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() admin: any,
+    @Body('note') note?: string, // optional admin note
   ) {
     this.adminService.assertAdmin(admin);
-    return this.adminService.approveSubmission(id, admin.id);
+    return this.adminService.approveSubmission(id, admin.id, note);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -109,5 +115,54 @@ export class AdminController {
   getPendingUsers(@CurrentUser() admin: any) {
     this.adminService.assertAdmin(admin);
     return this.adminService.getPendingUsers();
+  }
+  @UseGuards(JwtAuthGuard)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @Get('plans')
+  getAllPlans(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
+    // Admin sees all (active + inactive)
+    return this.adminService.getAllPlansForAdmin();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @Post('plans')
+  createPlan(@CurrentUser() admin: any, @Body() dto: CreatePlanDto) {
+    this.adminService.assertAdmin(admin);
+    return this.adminService.createPlan(dto, admin.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @Patch('plans/:id')
+  updatePlan(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePlanDto,
+  ) {
+    this.adminService.assertAdmin(admin);
+    return this.adminService.updatePlan(id, dto, admin.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @Patch('plans/:id/toggle')
+  togglePlan(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: TogglePlanDto,
+  ) {
+    this.adminService.assertAdmin(admin);
+    return this.adminService.togglePlanActive(id, dto.isActive, admin.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('plans/:id')
+  softDeletePlan(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.adminService.togglePlanActive(id, false, admin.id); // soft delete
   }
 }

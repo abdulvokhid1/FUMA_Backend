@@ -12,11 +12,6 @@ export class RegisterDto {
   email: string;
 
   @IsString()
-  // @MinLength(6, { message: 'Password must be at least 6 characters' })
-  // @MaxLength(30, { message: 'Password must not exceed 30 characters' })
-  // @Matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*?&]+$/, {
-  //   message: 'Password must contain letters and numbers',
-  // })
   password: string;
 
   @IsString()
@@ -36,9 +31,9 @@ export class LoginDto {
   password: string;
 }
 export class SubmitMembershipDto {
-  @IsEnum(MembershipPlan, { message: '올바른 멤버십 플랜을 선택해주세요.' })
-  membershipPlan: MembershipPlan;
+  @IsEnum(MembershipPlan, { message: '유효하지 않은 플랜입니다.' })
+  membershipPlan: MembershipPlan; // BASIC | PRO | VIP (enum from Prisma)
 
-  @IsEnum(PaymentMethod, { message: '올바른 결제 수단을 선택해주세요.' })
-  paymentMethod: PaymentMethod;
+  @IsEnum(PaymentMethod, { message: '유효하지 않은 결제수단입니다.' })
+  paymentMethod: PaymentMethod; // BANK_TRANSFER | USDT
 }

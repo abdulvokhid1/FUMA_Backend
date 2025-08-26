@@ -11,6 +11,12 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
+import {
+  assertAllowedPlanName,
+  CreatePlanDto,
+  UpdatePlanDto,
+} from './dto/plan.dto';
+import { Prisma } from '@prisma/client';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -76,51 +82,87 @@ export class AdminService {
   }
 
   /** APPROVE (atomic, idempotent, race-safe) */
-  async approveSubmission(submissionId: number, reviewedById: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const submission = await tx.paymentSubmission.findUnique({
+  // admin.service.ts
+  async approveSubmission(
+    submissionId: number,
+    adminId: number,
+    adminNote?: string,
+  ) {
+    const submission = await this.prisma.paymentSubmission.findUnique({
+      where: { id: submissionId },
+      include: { user: true },
+    });
+
+    if (!submission)
+      throw new NotFoundException('제출 내역을 찾을 수 없습니다.');
+    if (submission.status !== 'PENDING') {
+      throw new BadRequestException('이미 처리된 제출입니다.');
+    }
+
+    const planName = submission.plan;
+    const planMeta = await this.prisma.membershipPlanMeta.findUnique({
+      where: { name: planName },
+    });
+
+    if (!planMeta || !planMeta.isActive) {
+      throw new BadRequestException('선택한 플랜이 비활성화 상태입니다.');
+    }
+
+    // Calculate new expiry
+    const now = new Date();
+    const durationDays = planMeta.durationDays;
+    const expiresAt = new Date(
+      now.getTime() + durationDays * 24 * 60 * 60 * 1000,
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Update submission
+      await tx.paymentSubmission.update({
         where: { id: submissionId },
-        select: { id: true, status: true, userId: true, plan: true },
-      });
-      if (!submission)
-        throw new NotFoundException('해당 결제 제출이 존재하지 않습니다.');
-
-      if (submission.status === 'APPROVED') {
-        const user = await tx.user.findUnique({
-          where: { id: submission.userId },
-        });
-        return { message: '이미 승인된 제출입니다.', user };
-      }
-      if (submission.status === 'REJECTED') {
-        throw new BadRequestException('이미 거절된 제출입니다.');
-      }
-
-      const { count } = await tx.paymentSubmission.updateMany({
-        where: { id: submissionId, status: 'PENDING' },
-        data: { status: 'APPROVED', reviewedById, reviewedAt: new Date() },
-      });
-      if (count !== 1) {
-        throw new ConflictException(
-          '제출이 이미 처리되었습니다. 새로고침 후 다시 확인하세요.',
-        );
-      }
-
-      await tx.notification.updateMany({
-        where: { userId: submission.userId, plan: submission.plan },
-        data: { isApproved: true, isPayed: true, isRead: true },
+        data: {
+          status: 'APPROVED',
+          reviewedById: adminId,
+          reviewedAt: now,
+          adminNote: adminNote ?? null,
+        },
       });
 
-      const updatedUser = await tx.user.update({
+      // 2. Update user
+      await tx.user.update({
         where: { id: submission.userId },
         data: {
           isApproved: true,
           isPayed: true,
-          accessExpiresAt: new Date(Date.now() + THIRTY_DAYS_MS),
+          accessExpiresAt: expiresAt,
         },
       });
 
-      return { message: '사용자 승인 완료', user: updatedUser };
+      // 3. Update notification
+      await tx.notification.updateMany({
+        where: {
+          userId: submission.userId,
+          plan: submission.plan,
+          isRead: false,
+        },
+        data: {
+          isApproved: true,
+          isPayed: true,
+        },
+      });
+
+      // 4. (Optional) AdminLog
+      await tx.adminLog.create({
+        data: {
+          adminId,
+          action: 'APPROVE_SUBMISSION',
+          targetUserId: submission.userId,
+          submissionId: submission.id,
+          note: `플랜 ${planName} 승인됨. 유효기간 ${durationDays}일 설정됨.`,
+        },
+      });
     });
+
+    return { message: '승인이 완료되었습니다.', accessExpiresAt: expiresAt };
   }
 
   /** REJECT (atomic, idempotent, race-safe) */
@@ -222,5 +264,111 @@ export class AdminService {
   async getPendingUsers() {
     const users = await this.getUsersWithLatestStatus();
     return users.filter((u) => u.submissions[0]?.status === 'PENDING');
+  }
+
+  /** Admin: list all plans (active + inactive) */
+  async getAllPlansForAdmin() {
+    const plans = await this.prisma.membershipPlanMeta.findMany({
+      orderBy: [{ isActive: 'desc' }, { price: 'asc' }],
+    });
+    return { plans };
+  }
+
+  /** Admin: create a plan meta row (for an allowed enum plan) */
+  async createPlan(dto: CreatePlanDto, adminId: number) {
+    try {
+      assertAllowedPlanName(dto.name);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
+    const exists = await this.prisma.membershipPlanMeta.findUnique({
+      where: { name: dto.name },
+    });
+    if (exists) {
+      throw new ConflictException(`Plan meta for '${dto.name}' already exists`);
+    }
+
+    const plan = await this.prisma.membershipPlanMeta.create({
+      data: {
+        name: dto.name,
+        label: dto.label,
+        description: dto.description ?? null,
+        price: dto.price,
+        durationDays: dto.durationDays,
+        features: dto.features ?? {},
+        isActive: dto.isActive ?? true,
+      },
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'CREATE_PLAN_META',
+        note: `Created ${plan.name} (${plan.label}), price=${plan.price}, duration=${plan.durationDays}`,
+      },
+    });
+
+    return { message: 'Plan created', plan };
+  }
+
+  /** Admin: update a plan (partial) */
+  async updatePlan(id: number, dto: UpdatePlanDto, adminId: number) {
+    const existing = await this.prisma.membershipPlanMeta.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('Plan not found');
+
+    // Build update data incrementally so we can omit `features` unless provided
+    const data: Prisma.MembershipPlanMetaUpdateInput = {
+      label: dto.label ?? existing.label,
+      description: dto.description ?? existing.description,
+      price: dto.price ?? existing.price,
+      durationDays: dto.durationDays ?? existing.durationDays,
+      isActive: dto.isActive ?? existing.isActive,
+    };
+
+    if (dto.features !== undefined) {
+      // Column is non-nullable JSON. If you want to "clear", send {} not null.
+      data.features = dto.features as Prisma.InputJsonValue;
+    }
+
+    const plan = await this.prisma.membershipPlanMeta.update({
+      where: { id },
+      data,
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'UPDATE_PLAN_META',
+        note: `Updated plan ${existing.name} (${existing.label}) -> (${plan.label}); price=${plan.price}, duration=${plan.durationDays}, active=${plan.isActive}`,
+      },
+    });
+
+    return { message: 'Plan updated', plan };
+  }
+
+  /** Admin: toggle active (also used by DELETE for soft delete) */
+  async togglePlanActive(id: number, isActive: boolean, adminId: number) {
+    const existing = await this.prisma.membershipPlanMeta.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('Plan not found');
+
+    const plan = await this.prisma.membershipPlanMeta.update({
+      where: { id },
+      data: { isActive },
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: isActive ? 'ACTIVATE_PLAN_META' : 'DEACTIVATE_PLAN_META',
+        note: `${plan.name} (${plan.label}) -> isActive=${isActive}`,
+      },
+    });
+
+    return { message: 'Plan state updated', plan };
   }
 }
