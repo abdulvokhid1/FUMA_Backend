@@ -77,4 +77,9 @@ export class UserController {
   getActivePlans() {
     return this.userService.getActivePlans();
   }
+  @UseGuards(JwtAuthGuard)
+  @Get('access')
+  async getAccessOnly(@CurrentUser() user: User) {
+    return this.userService.getAccessOnly(user.id);
+  }
 }

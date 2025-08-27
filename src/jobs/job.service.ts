@@ -46,14 +46,33 @@ export class JobService {
 
   private async expireUserAccess() {
     const now = new Date();
-    const result = await this.prisma.user.updateMany({
+
+    const expiredUsers = await this.prisma.user.findMany({
       where: {
         isApproved: true,
         accessExpiresAt: { lt: now },
+        isDeleted: false,
       },
-      data: { isApproved: false },
+      select: { id: true, email: true },
     });
 
-    console.log(`[Auto-Expire] ${result.count} user(s) access revoked.`);
+    if (expiredUsers.length === 0) {
+      console.log('[Auto-Expire] No users expired.');
+      return;
+    }
+
+    const updates = expiredUsers.map((user) =>
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          isApproved: false,
+          isPayed: false,
+        },
+      }),
+    );
+
+    await this.prisma.$transaction(updates);
+
+    console.log(`[Auto-Expire] ${expiredUsers.length} user(s) access revoked.`);
   }
 }

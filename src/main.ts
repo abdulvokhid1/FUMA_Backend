@@ -6,6 +6,8 @@ import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigModule } from '@nestjs/config';
 import * as dotenv from 'dotenv';
+import cron from 'node-cron';
+import { JobService } from './jobs/job.service';
 dotenv.config({ path: '.env.prod' });
 console.log('✅ JWT_SECRET:', process.env.JWT_SECRET);
 
@@ -35,7 +37,14 @@ async function bootstrap() {
     ],
     credentials: true,
   });
+  // Get JobService instance from the NestJS app context
+  const jobService = app.get(JobService);
 
+  cron.schedule('0 0 * * *', async () => {
+    console.log('[CRON] Enqueuing access expiry job...');
+    await jobService.enqueueExpireAccessJob();
+    await jobService.processJobs();
+  });
   // ✅ Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({

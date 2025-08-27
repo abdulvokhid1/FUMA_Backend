@@ -14,6 +14,7 @@ import {
   User as PrismaUser,
 } from '@prisma/client';
 import { RegisterDto, SubmitMembershipDto } from './dto/user.dto';
+import { getPlanAccessMap } from '@/utils/plan-access.util';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -40,7 +41,6 @@ export class UserService {
         phone: dto.phone,
         isApproved: false,
         isPayed: false,
-        plan: null,
         paymentProofUrl: null,
         accessExpiresAt: null,
       },
@@ -63,6 +63,22 @@ export class UserService {
       orderBy: { createdAt: 'desc' },
       select: { plan: true },
     });
+
+    const now = new Date();
+    const isExpired =
+      user.accessExpiresAt !== null &&
+      user.accessExpiresAt.getTime() < now.getTime();
+
+    if (isExpired) {
+      // Optionally revoke access flags too
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          isApproved: false,
+          isPayed: false,
+        },
+      });
+    }
 
     const payload = {
       sub: user.id,
@@ -148,35 +164,7 @@ export class UserService {
   }
 
   async getMe(userId: number) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        paymentProofUrl: true,
-        isApproved: true,
-        isPayed: true,
-        accessExpiresAt: true,
-        createdAt: true,
-      },
-    });
-
-    if (!user) throw new NotFoundException('User not found');
-
-    const latestApproved = await this.prisma.paymentSubmission.findFirst({
-      where: { userId, status: 'APPROVED' },
-      orderBy: { createdAt: 'desc' },
-      select: { plan: true },
-    });
-
-    const planName = latestApproved?.plan ?? 'NOMEMBERSHIP';
-
-    return {
-      ...user,
-      plan: planName, // ✅ Injected dynamically
-    };
+    return this.buildMypageEntitlements(userId);
   }
 
   /** Latest submission for gating the UI */
@@ -186,7 +174,19 @@ export class UserService {
       orderBy: { createdAt: 'desc' },
       select: { id: true, status: true, plan: true, createdAt: true },
     });
-    return { latest };
+    let statusMessage = '❌ 결제 제출 내역이 없습니다.';
+    if (latest?.status === 'PENDING') {
+      statusMessage = '⏳ 결제 승인 대기 중입니다.';
+    } else if (latest?.status === 'APPROVED') {
+      statusMessage = '✅ 승인 완료되었습니다.';
+    } else if (latest?.status === 'REJECTED') {
+      statusMessage = '❌ 결제가 거절되었습니다. 다시 제출해 주세요.';
+    }
+
+    return {
+      latest,
+      statusMessage,
+    };
   }
 
   /** Submit membership (atomic, race-safe) */
@@ -286,8 +286,10 @@ export class UserService {
         accessExpiresAt: true,
       },
     });
+
     if (!user) throw new NotFoundException('User not found');
 
+    // 1. Get latest approved plan
     const latestApproved = await this.prisma.paymentSubmission.findFirst({
       where: { userId, status: 'APPROVED' },
       orderBy: { createdAt: 'desc' },
@@ -296,36 +298,26 @@ export class UserService {
 
     const planName = latestApproved?.plan ?? 'NOMEMBERSHIP';
 
-    // Then use planName as usual
+    // 2. Fetch plan metadata
     const planMeta = latestApproved?.plan
       ? await this.prisma.membershipPlanMeta.findUnique({
           where: { name: latestApproved.plan },
         })
       : null;
 
+    // 3. Determine access status
     const now = new Date();
-    const notExpired =
-      !user.accessExpiresAt || user.accessExpiresAt.getTime() > now.getTime();
-    const active = !!user.isApproved && notExpired;
+    const isExpired =
+      user.accessExpiresAt !== null &&
+      user.accessExpiresAt.getTime() < now.getTime();
 
-    // Feature flags from DB (fallback to all false if no plan or meta)
+    const isActive = !!user.isApproved && !isExpired;
+
+    // 4. Access flags using centralized utility
     const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
+    const access = getPlanAccessMap(metaFeatures, isActive);
 
-    const rawAccess: Record<string, boolean> = {
-      SIGNAL_CHARTS: !!metaFeatures.SIGNAL_CHARTS,
-      TELEGRAM_BASIC: !!metaFeatures.TELEGRAM_BASIC,
-      MARTINGALE_EA: !!metaFeatures.MARTINGALE_EA,
-      TELEGRAM_PRO: !!metaFeatures.TELEGRAM_PRO,
-      TELEGRAM_VIP: !!metaFeatures.TELEGRAM_VIP,
-      CONSULT_1ON1: !!metaFeatures.CONSULT_1ON1,
-    };
-
-    // Gate by active state
-    const access = Object.fromEntries(
-      Object.entries(rawAccess).map(([k, v]) => [k, active && v]),
-    ) as Record<string, boolean>;
-
-    // Quotas — prefer DB-driven; fallback to your previous plan rules
+    // 5. Quotas
     const quotas: Record<string, any> = {};
     const consultLimitFromMeta = Number.isFinite(metaFeatures.CONSULT_LIMIT)
       ? Number(metaFeatures.CONSULT_LIMIT)
@@ -334,7 +326,7 @@ export class UserService {
     if (consultLimitFromMeta !== undefined) {
       quotas.CONSULT_1ON1 = { monthlyLimit: consultLimitFromMeta, used: 0 };
     } else {
-      // Fallback to old logic by plan tiers
+      // fallback by plan name
       if (planName === 'VIP')
         quotas.CONSULT_1ON1 = {
           monthlyLimit: Number.POSITIVE_INFINITY,
@@ -345,7 +337,14 @@ export class UserService {
       else if (planName === 'BASIC')
         quotas.CONSULT_1ON1 = { monthlyLimit: 2, used: 0 };
     }
+    let statusMessage = '✅ Access granted';
+    if (!user.isApproved) {
+      statusMessage = '❗️관리자의 승인을 기다리고 있습니다.';
+    } else if (isExpired) {
+      statusMessage = '⛔️ 접근 권한이 만료되었습니다. 플랜을 갱신해 주세요.';
+    }
 
+    // 6. Final return
     return {
       id: user.id,
       email: user.email,
@@ -358,10 +357,14 @@ export class UserService {
       isApproved: !!user.isApproved,
       isPayed: !!user.isPayed,
       accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
+      isExpired,
+      isActive,
       access,
       quotas,
+      statusMessage,
     };
   }
+
   async getActivePlans() {
     const plans = await this.prisma.membershipPlanMeta.findMany({
       where: { isActive: true },
@@ -369,5 +372,47 @@ export class UserService {
     });
 
     return { plans };
+  }
+
+  async getAccessOnly(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        isApproved: true,
+        accessExpiresAt: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const latestApproved = await this.prisma.paymentSubmission.findFirst({
+      where: { userId, status: 'APPROVED' },
+      orderBy: { createdAt: 'desc' },
+      select: { plan: true },
+    });
+
+    const planName = latestApproved?.plan ?? 'NOMEMBERSHIP';
+
+    const planMeta = latestApproved?.plan
+      ? await this.prisma.membershipPlanMeta.findUnique({
+          where: { name: latestApproved.plan },
+        })
+      : null;
+
+    const now = new Date();
+    const isExpired =
+      user.accessExpiresAt !== null &&
+      user.accessExpiresAt.getTime() < now.getTime();
+
+    const isActive = !!user.isApproved && !isExpired;
+
+    const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
+    const access = getPlanAccessMap(metaFeatures, isActive);
+
+    return {
+      plan: planName,
+      isActive,
+      isExpired,
+      access,
+    };
   }
 }

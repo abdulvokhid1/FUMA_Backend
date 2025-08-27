@@ -17,6 +17,9 @@ import {
   UpdatePlanDto,
 } from './dto/plan.dto';
 import { Prisma } from '@prisma/client';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { getPlanAccessMap } from '@/utils/plan-access.util';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -72,12 +75,12 @@ export class AdminService {
             email: true,
             name: true,
             phone: true,
-            plan: true,
-            paymentProofUrl: true,
+            // 🔻 remove paymentProofUrl here; it's per-submission below
           },
         },
       },
       orderBy: { createdAt: 'desc' },
+      // ✅ FE should use `filePath` (or map it to a CDN URL at your API boundary)
     });
   }
 
@@ -131,6 +134,8 @@ export class AdminService {
       await tx.user.update({
         where: { id: submission.userId },
         data: {
+          // ✅ authoritative fields from the approved submission
+          paymentMethod: submission.paymentMethod,
           isApproved: true,
           isPayed: true,
           accessExpiresAt: expiresAt,
@@ -166,7 +171,8 @@ export class AdminService {
   }
 
   /** REJECT (atomic, idempotent, race-safe) */
-  async rejectSubmission(submissionId: number) {
+  // signature
+  async rejectSubmission(submissionId: number, adminId: number) {
     return this.prisma.$transaction(async (tx) => {
       const submission = await tx.paymentSubmission.findUnique({
         where: { id: submissionId },
@@ -174,7 +180,6 @@ export class AdminService {
       });
       if (!submission)
         throw new NotFoundException('해당 결제 제출이 존재하지 않습니다.');
-
       if (submission.status === 'REJECTED') {
         return { message: '이미 거절된 제출입니다.', submissionId };
       }
@@ -182,41 +187,26 @@ export class AdminService {
         throw new BadRequestException('이미 승인된 제출은 거절할 수 없습니다.');
       }
 
-      const { count } = await tx.paymentSubmission.updateMany({
-        where: { id: submissionId, status: 'PENDING' },
-        data: { status: 'REJECTED', reviewedAt: new Date() },
-      });
-      if (count !== 1) {
-        throw new ConflictException(
-          '제출이 이미 처리되었습니다. 새로고침 후 다시 확인하세요.',
-        );
-      }
-
-      const updatedSubmission = await tx.paymentSubmission.findUnique({
+      // ✅ capture reviewer & timestamp
+      const updated = await tx.paymentSubmission.update({
         where: { id: submissionId },
+        data: {
+          status: 'REJECTED',
+          reviewedById: adminId,
+          reviewedAt: new Date(),
+        },
       });
-      return {
-        message: '사용자 제출이 거절되었습니다.',
-        submission: updatedSubmission,
-      };
+
+      return { message: '사용자 제출이 거절되었습니다.', submission: updated };
     });
   }
 
   /** Generic user listing (no status filter) */
   async getAllUsers() {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
+      where: { isDeleted: false },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        plan: true,
-        paymentProofUrl: true,
-        isApproved: true,
-        accessExpiresAt: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
         submissions: {
           take: 1,
           orderBy: { createdAt: 'desc' },
@@ -224,18 +214,61 @@ export class AdminService {
         },
       },
     });
+
+    const now = new Date();
+
+    const enriched = await Promise.all(
+      users.map(async (user) => {
+        const latestSubmission = user.submissions[0];
+        const planName = latestSubmission?.plan ?? 'NOMEMBERSHIP';
+
+        const planMeta = latestSubmission?.plan
+          ? await this.prisma.membershipPlanMeta.findUnique({
+              where: { name: latestSubmission.plan },
+            })
+          : null;
+
+        const isExpired =
+          user.accessExpiresAt !== null &&
+          user.accessExpiresAt.getTime() < now.getTime();
+
+        const isActive = !!user.isApproved && !isExpired;
+
+        const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
+        const access = getPlanAccessMap(metaFeatures, isActive);
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          isApproved: user.isApproved,
+          isPayed: user.isPayed,
+          accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
+          createdAt: user.createdAt.toISOString(),
+          updatedAt: user.updatedAt.toISOString(),
+          plan: planName,
+          isActive,
+          isExpired,
+          access,
+          latestSubmissionStatus: latestSubmission?.status ?? null,
+        };
+      }),
+    );
+
+    return enriched;
   }
 
   /** Helper: fetch users with their LATEST submission only (avoids “mixing”) */
   private async getUsersWithLatestStatus() {
     return this.prisma.user.findMany({
+      where: { isDeleted: false }, // ✅ filter
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         email: true,
         name: true,
         phone: true,
-        plan: true,
         paymentProofUrl: true,
         isApproved: true,
         accessExpiresAt: true,
@@ -370,5 +403,236 @@ export class AdminService {
     });
 
     return { message: 'Plan state updated', plan };
+  }
+
+  /** Admin creates a new user (password hashed, defaults enforced) */
+  async createUser(dto: CreateUserDto, adminId: number) {
+    const exists = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (exists) throw new ConflictException('Email already in use');
+
+    const hash = await bcrypt.hash(dto.password, 10);
+
+    let expiresAt: Date | null = null;
+
+    // Get plan duration if plan is passed
+    if (dto.plan) {
+      const meta = await this.prisma.membershipPlanMeta.findUnique({
+        where: { name: dto.plan },
+      });
+
+      if (!meta || !meta.isActive) {
+        throw new BadRequestException(
+          '선택한 플랜이 존재하지 않거나 비활성화되었습니다.',
+        );
+      }
+
+      expiresAt = new Date(
+        Date.now() + meta.durationDays * 24 * 60 * 60 * 1000,
+      );
+    }
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        password: hash,
+        name: dto.name ?? null,
+        phone: dto.phone ?? null,
+        role: 'USER',
+        paymentMethod: dto.paymentMethod ?? null,
+        isApproved: !!dto.plan,
+        isPayed: !!dto.plan,
+        accessExpiresAt: expiresAt,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        isApproved: true,
+        accessExpiresAt: true,
+      },
+    });
+
+    // Simulate approved PaymentSubmission if plan given
+    if (dto.plan) {
+      await this.prisma.paymentSubmission.create({
+        data: {
+          userId: user.id,
+          plan: dto.plan,
+          paymentMethod: dto.paymentMethod ?? 'BANK_TRANSFER',
+          filePath: 'admin-created', // Dummy
+          fileOriginalName: 'admin-created',
+          status: 'APPROVED',
+          reviewedById: adminId,
+          reviewedAt: new Date(),
+          adminNote: '[Admin Created]',
+        },
+      });
+    }
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'CREATE_USER',
+        targetUserId: user.id,
+        note: dto.plan
+          ? `Created approved user with plan=${dto.plan}`
+          : 'Created user without plan',
+      },
+    });
+
+    return { message: 'User created', user };
+  }
+
+  async updateUser(userId: number, dto: UpdateUserDto, adminId: number) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!current) throw new NotFoundException('User not found');
+    if (current.isDeleted)
+      throw new BadRequestException('Cannot update a deleted user');
+
+    const data: Prisma.UserUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.phone !== undefined) data.phone = dto.phone;
+    // if (dto.plan !== undefined) data.plan = dto.plan;
+    if (dto.isApproved !== undefined) data.isApproved = dto.isApproved;
+    if (dto.isPayed !== undefined) data.isPayed = dto.isPayed;
+    if (dto.paymentProofUrl !== undefined)
+      data.paymentProofUrl = dto.paymentProofUrl;
+    if (dto.accessExpiresAt !== undefined)
+      data.accessExpiresAt = new Date(dto.accessExpiresAt);
+
+    try {
+      const updated = await this.prisma.user.update({
+        where: { id: userId },
+        data,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          isApproved: true,
+          isPayed: true,
+          accessExpiresAt: true,
+          paymentProofUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.prisma.adminLog.create({
+        data: {
+          adminId,
+          action: 'UPDATE_USER',
+          targetUserId: userId,
+          note: `Fields updated: ${Object.keys(data).join(', ')}`,
+        },
+      });
+
+      return { message: 'User updated', user: updated };
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException('Email already in use');
+      }
+      throw e;
+    }
+  }
+
+  async softDeleteUser(userId: number, adminId: number) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return { message: 'Already deleted or not found', userId };
+    if (user.isDeleted) return { message: 'Already deleted', userId };
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        // revoke access at the same time
+        isApproved: false,
+        isPayed: false,
+      },
+      select: {
+        id: true,
+        email: true,
+        isDeleted: true,
+        deletedAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'SOFT_DELETE_USER',
+        targetUserId: userId,
+        note: `User soft-deleted (access revoked)`,
+      },
+    });
+
+    return { message: 'User soft-deleted', user: updated };
+  }
+
+  /** Restore user (un-delete; does NOT auto-approve/pay) */
+  async restoreUser(userId: number, adminId: number) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.isDeleted) return { message: 'User is not deleted', userId };
+
+    const restored = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        isDeleted: false,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        isDeleted: true,
+        deletedAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'RESTORE_USER',
+        targetUserId: userId,
+        note: `User restored (not auto-approved)`,
+      },
+    });
+
+    return { message: 'User restored', user: restored };
+  }
+
+  async getDeletedUsers() {
+    return this.prisma.user.findMany({
+      where: { isDeleted: true },
+      orderBy: { deletedAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        paymentProofUrl: true,
+        isApproved: true,
+        isPayed: true,
+        accessExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+        isDeleted: true,
+        deletedAt: true,
+        submissions: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { status: true, plan: true, createdAt: true },
+        },
+      },
+    });
   }
 }

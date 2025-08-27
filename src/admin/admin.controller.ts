@@ -21,6 +21,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatePlanDto, TogglePlanDto, UpdatePlanDto } from './dto/plan.dto';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('admin')
 export class AdminController {
@@ -40,16 +42,23 @@ export class AdminController {
     return this.adminService.login(dto);
   }
 
+  // getMe
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getMe(@CurrentUser() user: any) {
-    // Accept 'admin' | 'ADMIN' defensively
     if (!user?.role || String(user.role).toLowerCase() !== 'admin') {
       throw new UnauthorizedException('Admin 권한이 없습니다.');
     }
 
+    // ✅ prefer sub (new payload), fallback to id if your JwtStrategy remaps it
+    const adminIdRaw = user?.sub ?? user?.id;
+    if (adminIdRaw == null) {
+      throw new UnauthorizedException('토큰에 관리자 ID가 없습니다.');
+    }
+    const adminId = Number(adminIdRaw);
+
     const admin = await this.prisma.admin.findUnique({
-      where: { id: user.id },
+      where: { id: adminId },
     });
     if (!admin) throw new UnauthorizedException('Admin not found');
 
@@ -73,12 +82,12 @@ export class AdminController {
   approveSubmission(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() admin: any,
-    @Body('note') note?: string, // optional admin note
+    @Body('note') note?: string,
   ) {
     this.adminService.assertAdmin(admin);
-    return this.adminService.approveSubmission(id, admin.id, note);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.approveSubmission(id, adminId, note);
   }
-
   @UseGuards(JwtAuthGuard)
   @Post('reject/:id')
   rejectSubmission(
@@ -86,7 +95,8 @@ export class AdminController {
     @CurrentUser() admin: any,
   ) {
     this.adminService.assertAdmin(admin);
-    return this.adminService.rejectSubmission(id);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.rejectSubmission(id, adminId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -116,6 +126,7 @@ export class AdminController {
     this.adminService.assertAdmin(admin);
     return this.adminService.getPendingUsers();
   }
+
   @UseGuards(JwtAuthGuard)
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @Get('plans')
@@ -134,7 +145,6 @@ export class AdminController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @Patch('plans/:id')
   updatePlan(
     @CurrentUser() admin: any,
@@ -142,11 +152,11 @@ export class AdminController {
     @Body() dto: UpdatePlanDto,
   ) {
     this.adminService.assertAdmin(admin);
-    return this.adminService.updatePlan(id, dto, admin.id);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.updatePlan(id, dto, adminId);
   }
 
   @UseGuards(JwtAuthGuard)
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @Patch('plans/:id/toggle')
   togglePlan(
     @CurrentUser() admin: any,
@@ -154,7 +164,8 @@ export class AdminController {
     @Body() dto: TogglePlanDto,
   ) {
     this.adminService.assertAdmin(admin);
-    return this.adminService.togglePlanActive(id, dto.isActive, admin.id);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.togglePlanActive(id, dto.isActive, adminId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -163,6 +174,60 @@ export class AdminController {
     @CurrentUser() admin: any,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.adminService.togglePlanActive(id, false, admin.id); // soft delete
+    this.adminService.assertAdmin(admin); // ✅ (add consistency)
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.togglePlanActive(id, false, adminId);
+  }
+
+  //////
+
+  // users
+  @UseGuards(JwtAuthGuard)
+  @Post('users')
+  createUser(@CurrentUser() admin: any, @Body() dto: CreateUserDto) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.createUser(dto, adminId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('users/:id')
+  updateUser(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserDto,
+  ) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.updateUser(id, dto, adminId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('users/:id')
+  softDeleteUser(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.softDeleteUser(id, adminId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('users/:id/restore')
+  restoreUser(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id); // ✅
+    return this.adminService.restoreUser(id, adminId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('users/deleted')
+  getDeletedUsers(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
+    return this.adminService.getDeletedUsers();
   }
 }
