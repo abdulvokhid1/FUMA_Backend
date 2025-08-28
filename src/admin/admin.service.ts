@@ -19,7 +19,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { getPlanAccessMap } from '@/utils/plan-access.util';
+import { getPlanAccessMap } from '../utils/plan-access.util';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
