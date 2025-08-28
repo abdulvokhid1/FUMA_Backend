@@ -6,8 +6,8 @@ import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigModule } from '@nestjs/config';
 import * as dotenv from 'dotenv';
-import cron from 'node-cron';
 import { JobService } from './jobs/job.service';
+import cron from 'node-cron';
 dotenv.config({ path: '.env.prod' });
 console.log('✅ JWT_SECRET:', process.env.JWT_SECRET);
 
