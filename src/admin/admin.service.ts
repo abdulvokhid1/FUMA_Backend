@@ -309,12 +309,6 @@ export class AdminService {
 
   /** Admin: create a plan meta row (for an allowed enum plan) */
   async createPlan(dto: CreatePlanDto, adminId: number) {
-    try {
-      assertAllowedPlanName(dto.name);
-    } catch (e) {
-      throw new BadRequestException((e as Error).message);
-    }
-
     const exists = await this.prisma.membershipPlanMeta.findUnique({
       where: { name: dto.name },
     });

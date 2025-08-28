@@ -16,6 +16,7 @@ export type AllowedPlanName = (typeof ALLOWED_PLAN_ENUMS)[number];
 export class CreatePlanDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(40)
   name!: string; // must match MembershipPlan enum
 
   @IsString()
