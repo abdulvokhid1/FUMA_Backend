@@ -70,6 +70,53 @@ export class AdminController {
     };
   }
 
+  @Get('new-users')
+  @UseGuards(JwtAuthGuard)
+  async getNewUserNotifications() {
+    const notis = await this.prisma.notification.findMany({
+      where: {
+        type: 'USER_REGISTERED',
+        isRead: false,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true },
+        },
+      },
+    });
+
+    return notis.map((n) => ({
+      id: n.id,
+      userId: n.userId,
+      email: n.user.email,
+      name: n.user.name,
+      phone: n.user.phone,
+      createdAt: n.createdAt,
+    }));
+  }
+  @Post('new-users/:id/read')
+  @UseGuards(JwtAuthGuard)
+  async markNewUserRead(@Param('id') id: string) {
+    await this.prisma.notification.update({
+      where: { id: +id },
+      data: { isRead: true },
+    });
+    return { message: 'Marked as read' };
+  }
+  @Post('new-users/read-all')
+  @UseGuards(JwtAuthGuard)
+  async markAllNewUsersRead() {
+    await this.prisma.notification.updateMany({
+      where: {
+        type: 'USER_REGISTERED',
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
+    return { message: 'All marked as read' };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('notifications')
   getAllNotifications(@CurrentUser() user: any) {
@@ -229,5 +276,12 @@ export class AdminController {
   getDeletedUsers(@CurrentUser() admin: any) {
     this.adminService.assertAdmin(admin);
     return this.adminService.getDeletedUsers();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('expiring-users')
+  getExpiringUsers(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
+    return this.adminService.getExpiringUsers();
   }
 }

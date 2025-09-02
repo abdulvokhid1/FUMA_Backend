@@ -63,6 +63,8 @@ model User {
   deletedAt          DateTime?
   submissions   PaymentSubmission[]
   notifications Notification[]
+  resetToken       String?   // hashed token
+  resetTokenExpiry DateTime?
    @@index([isDeleted])
 }
 

@@ -84,6 +84,40 @@ export class AdminService {
     });
   }
 
+  async getExpiringUsers() {
+    const now = new Date();
+    const tenDaysLater = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        isApproved: true,
+        isPayed: true,
+        isDeleted: false,
+        accessExpiresAt: {
+          lte: tenDaysLater,
+          gte: now,
+        },
+      },
+      orderBy: { accessExpiresAt: 'asc' },
+      include: {
+        submissions: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { plan: true },
+        },
+      },
+    });
+
+    return users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      phone: u.phone,
+      accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
+      plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP', // ✅ fallback
+    }));
+  }
+
   /** APPROVE (atomic, idempotent, race-safe) */
   // admin.service.ts
   async approveSubmission(
@@ -248,6 +282,8 @@ export class AdminService {
           createdAt: user.createdAt.toISOString(),
           updatedAt: user.updatedAt.toISOString(),
           plan: planName,
+          paymentProofUrl: user.paymentProofUrl,
+          paymentMethod: user.paymentMethod, // e.g., BANK_TRANSFER, CreditCard, etc. --- could be null if no plan
           isActive,
           isExpired,
           access,
@@ -270,6 +306,7 @@ export class AdminService {
         name: true,
         phone: true,
         paymentProofUrl: true,
+        paymentMethod: true,
         isApproved: true,
         accessExpiresAt: true,
         createdAt: true,
@@ -286,17 +323,59 @@ export class AdminService {
   /** Approved/Rejected/Pending based on the LATEST submission only */
   async getApprovedUsers() {
     const users = await this.getUsersWithLatestStatus();
-    return users.filter((u) => u.submissions[0]?.status === 'APPROVED');
+    return users
+      .filter((u) => u.submissions[0]?.status === 'APPROVED')
+      .map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        phone: u.phone,
+        paymentProofUrl: u.paymentProofUrl,
+        paymentMethod: u.paymentMethod,
+        isApproved: u.isApproved,
+        accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
+        createdAt: u.createdAt?.toISOString() ?? null,
+        updatedAt: u.updatedAt?.toISOString() ?? null,
+        plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP',
+        latestSubmissionStatus: u.submissions?.[0]?.status ?? null,
+      }));
   }
 
   async getRejectedUsers() {
     const users = await this.getUsersWithLatestStatus();
-    return users.filter((u) => u.submissions[0]?.status === 'REJECTED');
+    return users
+      .filter((u) => u.submissions[0]?.status === 'REJECTED')
+      .map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        phone: u.phone,
+        paymentProofUrl: u.paymentProofUrl,
+        paymentMethod: u.paymentMethod,
+        isApproved: u.isApproved,
+        accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
+        createdAt: u.createdAt?.toISOString() ?? null,
+        updatedAt: u.updatedAt?.toISOString() ?? null,
+        plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP',
+        latestSubmissionStatus: u.submissions?.[0]?.status ?? null,
+      }));
   }
-
   async getPendingUsers() {
     const users = await this.getUsersWithLatestStatus();
-    return users.filter((u) => u.submissions[0]?.status === 'PENDING');
+    return users
+      .filter((u) => u.submissions[0]?.status === 'PENDING')
+      .map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        phone: u.phone,
+        isApproved: u.isApproved,
+        accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
+        createdAt: u.createdAt?.toISOString() ?? null,
+        updatedAt: u.updatedAt?.toISOString() ?? null,
+        plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP',
+        latestSubmissionStatus: u.submissions?.[0]?.status ?? null,
+      }));
   }
 
   /** Admin: list all plans (active + inactive) */

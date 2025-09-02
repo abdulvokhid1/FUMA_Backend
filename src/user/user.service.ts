@@ -12,9 +12,11 @@ import {
   PaymentMethod,
   SubmissionStatus,
   User as PrismaUser,
+  User,
 } from '@prisma/client';
 import { RegisterDto, SubmitMembershipDto } from './dto/user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
+import * as crypto from 'crypto';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -43,7 +45,14 @@ export class UserService {
         isPayed: false,
         paymentProofUrl: null,
         accessExpiresAt: null,
+        notifications: {
+          create: {
+            type: 'USER_REGISTERED',
+            message: `🆕 New user registered: ${dto.email}`,
+          },
+        },
       },
+      include: { notifications: true }, // optional
     });
 
     return { message: 'Registration successful', userId: user.id };
@@ -109,6 +118,62 @@ export class UserService {
     };
   }
 
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new NotFoundException('No user found with that email.');
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const hashedToken = await bcrypt.hash(token, 10);
+    const expiry = new Date(Date.now() + 1000 * 60 * 15); // 15 mins
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken: hashedToken,
+        resetTokenExpiry: expiry,
+      },
+    });
+
+    // TODO: Send token via email. For now, return it for development.
+    return { message: 'Reset token generated', resetToken: token };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        resetToken: { not: null },
+        resetTokenExpiry: { gte: new Date() },
+      },
+    });
+
+    let matchedUser: User | null = null;
+    for (const user of users) {
+      const isMatch = await bcrypt.compare(token, user.resetToken!);
+      if (isMatch) {
+        matchedUser = user;
+        break;
+      }
+    }
+
+    if (!matchedUser) {
+      throw new UnauthorizedException('Invalid or expired reset token.');
+    }
+
+    const newHashed = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: matchedUser.id },
+      data: {
+        password: newHashed,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+
+    return { message: 'Password has been reset successfully.' };
+  }
   async refreshTokens(refreshToken: string) {
     if (!refreshToken) {
       throw new UnauthorizedException('리프레시 토큰이 없습니다.');
@@ -155,6 +220,7 @@ export class UserService {
       );
     }
   }
+
   async logout(userId: number) {
     await this.prisma.user.update({
       where: { id: userId },

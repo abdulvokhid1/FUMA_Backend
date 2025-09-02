@@ -5,6 +5,7 @@ import {
   IsPhoneNumber,
   IsEnum,
 } from 'class-validator';
+
 import { MembershipPlan, PaymentMethod } from '@prisma/client';
 
 export class RegisterDto {
