@@ -708,4 +708,57 @@ export class AdminService {
       },
     });
   }
+
+  async getUserPlanSummary() {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // Fetch all non-deleted users with latest submission
+    const users = await this.prisma.user.findMany({
+      where: { isDeleted: false },
+      include: {
+        submissions: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { plan: true },
+        },
+      },
+    });
+
+    const todayUsers = users.filter((u) => {
+      return u.createdAt >= startOfToday && u.createdAt <= endOfToday;
+    });
+
+    // Grouping function
+    const planCounts = new Map<string, { today: number; overall: number }>();
+
+    const increment = (plan: string, type: 'today' | 'overall') => {
+      if (!planCounts.has(plan)) {
+        planCounts.set(plan, { today: 0, overall: 0 });
+      }
+      planCounts.get(plan)![type]++;
+    };
+
+    for (const u of users) {
+      const plan = u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP';
+      increment(plan, 'overall');
+    }
+
+    for (const u of todayUsers) {
+      const plan = u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP';
+      increment(plan, 'today');
+    }
+
+    // Convert to array for frontend
+    const summary = Array.from(planCounts.entries()).map(([plan, counts]) => ({
+      plan,
+      today: counts.today,
+      overall: counts.overall,
+    }));
+
+    return { summary };
+  }
 }

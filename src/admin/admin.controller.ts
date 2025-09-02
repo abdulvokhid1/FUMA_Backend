@@ -284,4 +284,11 @@ export class AdminController {
     this.adminService.assertAdmin(admin);
     return this.adminService.getExpiringUsers();
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('user-plan-summary')
+  getUserPlanSummary(@CurrentUser() admin: any) {
+    this.adminService.assertAdmin(admin);
+    return this.adminService.getUserPlanSummary();
+  }
 }
