@@ -47,6 +47,10 @@ export class CreatePlanDto {
 }
 
 export class UpdatePlanDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @IsString()
   @IsOptional()
   @MaxLength(80)

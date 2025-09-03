@@ -427,6 +427,7 @@ export class AdminService {
 
     // Build update data incrementally so we can omit `features` unless provided
     const data: Prisma.MembershipPlanMetaUpdateInput = {
+      name: dto.name ?? existing.name, // ✅ Add this line
       label: dto.label ?? existing.label,
       description: dto.description ?? existing.description,
       price: dto.price ?? existing.price,
@@ -435,7 +436,6 @@ export class AdminService {
     };
 
     if (dto.features !== undefined) {
-      // Column is non-nullable JSON. If you want to "clear", send {} not null.
       data.features = dto.features as Prisma.InputJsonValue;
     }
 
@@ -443,7 +443,16 @@ export class AdminService {
       where: { id },
       data,
     });
-
+    if (dto.name && dto.name !== existing.name) {
+      const conflict = await this.prisma.membershipPlanMeta.findUnique({
+        where: { name: dto.name },
+      });
+      if (conflict) {
+        throw new ConflictException(
+          `Plan name '${dto.name}' is already in use`,
+        );
+      }
+    }
     await this.prisma.adminLog.create({
       data: {
         adminId,
