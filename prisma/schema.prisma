@@ -61,8 +61,6 @@ model User {
   // ✅ Soft delete flags
   isDeleted          Boolean         @default(false)
   deletedAt          DateTime?
-  submissions   PaymentSubmission[]
-  notifications Notification[]
   resetToken       String?   // hashed token
   resetTokenExpiry DateTime?
    @@index([isDeleted])
