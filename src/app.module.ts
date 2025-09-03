@@ -7,7 +7,7 @@ import { UserModule } from './user/user.module';
 import { FaqModule } from './faq/faq.module';
 import { JobsModule } from './jobs/jobs.module';
 import { JobController } from './jobs/job.controller';
-import { PrismaService } from 'prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Module({
   imports: [
