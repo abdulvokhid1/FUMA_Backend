@@ -425,9 +425,21 @@ export class AdminService {
     });
     if (!existing) throw new NotFoundException('Plan not found');
 
-    // Build update data incrementally so we can omit `features` unless provided
+    // ✅ CHECK FOR DUPLICATE NAME FIRST (BEFORE update)
+    if (dto.name && dto.name !== existing.name) {
+      const conflict = await this.prisma.membershipPlanMeta.findUnique({
+        where: { name: dto.name },
+      });
+
+      // If there's a plan with this name and it's NOT the same plan we're updating:
+      if (conflict && conflict.id !== id) {
+        throw new ConflictException(`Plan name '${dto.name}' already exists.`);
+      }
+    }
+
+    // ✅ Now it's safe to build the update payload
     const data: Prisma.MembershipPlanMetaUpdateInput = {
-      name: dto.name ?? existing.name, // ✅ Add this line
+      name: dto.name ?? existing.name,
       label: dto.label ?? existing.label,
       description: dto.description ?? existing.description,
       price: dto.price ?? existing.price,
@@ -439,25 +451,17 @@ export class AdminService {
       data.features = dto.features as Prisma.InputJsonValue;
     }
 
+    // ✅ Now it's safe to update
     const plan = await this.prisma.membershipPlanMeta.update({
       where: { id },
       data,
     });
-    if (dto.name && dto.name !== existing.name) {
-      const conflict = await this.prisma.membershipPlanMeta.findUnique({
-        where: { name: dto.name },
-      });
-      if (conflict) {
-        throw new ConflictException(
-          `Plan name '${dto.name}' is already in use`,
-        );
-      }
-    }
+
     await this.prisma.adminLog.create({
       data: {
         adminId,
         action: 'UPDATE_PLAN_META',
-        note: `Updated plan ${existing.name} (${existing.label}) -> (${plan.label}); price=${plan.price}, duration=${plan.durationDays}, active=${plan.isActive}`,
+        note: `Updated plan ${existing.name} → ${plan.name} (${plan.label})`,
       },
     });
 
