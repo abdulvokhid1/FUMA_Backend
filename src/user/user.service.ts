@@ -19,7 +19,7 @@ import {
 import { RegisterDto, SubmitMembershipDto } from './dto/user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
 import * as crypto from 'crypto';
-import { AuthErrorCode } from '@/common/errors/auth-error-code';
+import { AuthErrorCode } from '../common/errors/auth-error-code';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
