@@ -1,37 +1,21 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, HttpStatus } from '@nestjs/common';
 import helmet from 'helmet';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ConfigModule } from '@nestjs/config';
-import * as dotenv from 'dotenv';
-import { JobService } from './jobs/job.service';
-import cron from 'node-cron';
-
-// ✅ Load environment variables early
-dotenv.config({ path: '.env.prod' });
-
-console.log('✅ JWT_SECRET:', process.env.JWT_SECRET);
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // ✅ Setup ConfigModule globally (though this is already in AppModule typically)
-  ConfigModule.forRoot({
-    envFilePath: '.env.prod',
-    isGlobal: true,
-  });
+  // Static files (uploads)
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
-  // ✅ Static assets
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
-    prefix: '/uploads/',
-  });
-
-  // ✅ Security headers
+  // Security
   app.use(helmet());
 
-  // ✅ CORS config
+  // CORS
   app.enableCors({
     origin: [
       'https://www.fumatrade.net',
@@ -44,36 +28,40 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // ✅ Global ValidationPipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  // ✅ Serve uploads with CORS headers
+  // Allow CDN/Next Image to fetch /uploads
   app.use('/uploads', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
   });
 
-  // ✅ Inject JobService and schedule cron
-  const jobService = app.get(JobService);
-  cron.schedule('0 0 * * *', async () => {
-    console.log('[CRON] Enqueuing access expiry job...');
-    try {
-      await jobService.enqueueExpireAccessJob();
-      await jobService.processJobs();
-    } catch (err) {
-      console.error('[CRON ERROR]', err);
-    }
-  });
+  // Global error & validation
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      exceptionFactory: (errors) => {
+        const messages = errors.flatMap((e) =>
+          Object.values(e.constraints ?? {}),
+        );
+        const err: any = new Error('BadRequestException');
+        err.status = HttpStatus.BAD_REQUEST;
+        err.response = {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: messages[0] ?? 'Validation failed',
+          error: 'Bad Request',
+          errorCode: 'VALIDATION_ERROR',
+          details: messages,
+        };
+        return err;
+      },
+    }),
+  );
 
-  // ✅ Start server
-  const port = process.env.PORT || 3001;
+  // Listen
+  const port = Number(process.env.PORT) || 3001; // ConfigModule already loaded globally
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server running on http://localhost:${port}`);
 }

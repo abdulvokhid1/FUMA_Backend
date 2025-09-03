@@ -1,0 +1,6 @@
+// src/common/errors/auth-error-code.ts
+export enum AuthErrorCode {
+  EMAIL_NOT_REGISTERED = 'AUTH_EMAIL_NOT_REGISTERED',
+  PASSWORD_INCORRECT = 'AUTH_PASSWORD_INCORRECT',
+  TOKEN_EXPIRED_OR_INVALID = 'AUTH_TOKEN_INVALID',
+}

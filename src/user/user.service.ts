@@ -17,6 +17,7 @@ import {
 import { RegisterDto, SubmitMembershipDto } from './dto/user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
 import * as crypto from 'crypto';
+import { AuthErrorCode } from '@/common/errors/auth-error-code';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -62,10 +63,25 @@ export class UserService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    if (!user) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Email is not registered',
+        error: 'Bad Request',
+        errorCode: AuthErrorCode.EMAIL_NOT_REGISTERED,
+      });
+    }
 
     const valid = await bcrypt.compare(dto.password, user.password);
-    if (!valid) throw new UnauthorizedException('Invalid credentials');
+    if (!valid) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Password is wrong',
+        error: 'Bad Request',
+        errorCode: AuthErrorCode.PASSWORD_INCORRECT,
+      });
+    }
 
     const latestApproved = await this.prisma.paymentSubmission.findFirst({
       where: { userId: user.id, status: 'APPROVED' },
@@ -79,7 +95,6 @@ export class UserService {
       user.accessExpiresAt.getTime() < now.getTime();
 
     if (isExpired) {
-      // Optionally revoke access flags too
       await this.prisma.user.update({
         where: { id: user.id },
         data: {
@@ -105,7 +120,7 @@ export class UserService {
       expiresIn: '7d',
     });
 
-    // ✅ Hash and store the refresh token
+    // ✅ Hash and store refresh token
     const hashedRefresh = await bcrypt.hash(refreshToken, 10);
     await this.prisma.user.update({
       where: { id: user.id },
