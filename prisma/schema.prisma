@@ -30,6 +30,18 @@ enum SubmissionStatus {
   REJECTED
 }
 
+enum PaymentStatus {
+  NONE       // 초기 (null)
+  VERIFYING  // 결제 확인중
+  COMPLETED  // 결제 완료
+}
+
+enum ApprovalStatus {
+  NONE      // 초기 (null)
+  PENDING   // 승인 대기중
+  APPROVED  // 승인 완료
+}
+
 /**
  * ========== Models ==========
  */
@@ -44,26 +56,29 @@ model Admin {
 }
 
 model User {
-  id                 Int             @id @default(autoincrement())
-  email              String          @unique
+  id                 Int                 @id @default(autoincrement())
+  email              String              @unique
   password           String
   name               String?
   phone              String?
-  isApproved         Boolean         @default(false)
-  isPayed            Boolean         @default(false)
+  paymentStatus      PaymentStatus    @default(NONE)
+  approvalStatus     ApprovalStatus   @default(NONE)
   accessExpiresAt    DateTime?
   paymentMethod      PaymentMethod?
   paymentProofUrl    String?
   hashedRefreshToken String?
-  role               Role            @default(USER)
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  role               Role                @default(USER)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   // ✅ Soft delete flags
-  isDeleted          Boolean         @default(false)
+  isDeleted          Boolean             @default(false)
   deletedAt          DateTime?
-  resetToken       String?   // hashed token
-  resetTokenExpiry DateTime?
-   @@index([isDeleted])
+  resetToken         String? // hashed token
+  resetTokenExpiry   DateTime?
+  submissions        PaymentSubmission[]
+  notifications      Notification[]
+
+  @@index([isDeleted])
 }
 
 model PaymentSubmission {

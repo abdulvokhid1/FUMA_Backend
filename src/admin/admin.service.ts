@@ -16,7 +16,11 @@ import {
   CreatePlanDto,
   UpdatePlanDto,
 } from './dto/plan.dto';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  PaymentStatus, // ✅ add
+  ApprovalStatus, // ✅ add
+} from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
@@ -90,8 +94,8 @@ export class AdminService {
 
     const users = await this.prisma.user.findMany({
       where: {
-        isApproved: true,
-        isPayed: true,
+        approvalStatus: 'APPROVED',
+        paymentStatus: 'COMPLETED',
         isDeleted: false,
         accessExpiresAt: {
           lte: tenDaysLater,
@@ -115,6 +119,8 @@ export class AdminService {
       phone: u.phone,
       accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
       plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP', // ✅ fallback
+      approvalStatus: u.approvalStatus,
+      paymentStatus: u.paymentStatus,
     }));
   }
 
@@ -170,8 +176,8 @@ export class AdminService {
         data: {
           // ✅ authoritative fields from the approved submission
           paymentMethod: submission.paymentMethod,
-          isApproved: true,
-          isPayed: true,
+          paymentStatus: 'COMPLETED',
+          approvalStatus: 'APPROVED',
           accessExpiresAt: expiresAt,
         },
       });
@@ -210,7 +216,7 @@ export class AdminService {
     return this.prisma.$transaction(async (tx) => {
       const submission = await tx.paymentSubmission.findUnique({
         where: { id: submissionId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, userId: true },
       });
       if (!submission)
         throw new NotFoundException('해당 결제 제출이 존재하지 않습니다.');
@@ -221,13 +227,23 @@ export class AdminService {
         throw new BadRequestException('이미 승인된 제출은 거절할 수 없습니다.');
       }
 
-      // ✅ capture reviewer & timestamp
+      // 1) mark submission rejected
       const updated = await tx.paymentSubmission.update({
         where: { id: submissionId },
         data: {
           status: 'REJECTED',
           reviewedById: adminId,
           reviewedAt: new Date(),
+        },
+      });
+
+      // 2) reset user step statuses (optional clear proof)
+      await tx.user.update({
+        where: { id: submission.userId },
+        data: {
+          paymentStatus: 'NONE',
+          approvalStatus: 'NONE',
+          // paymentProofUrl: null,    // ← enable if you want to clear
         },
       });
 
@@ -266,7 +282,8 @@ export class AdminService {
           user.accessExpiresAt !== null &&
           user.accessExpiresAt.getTime() < now.getTime();
 
-        const isActive = !!user.isApproved && !isExpired;
+        // ✅ Active = approved & not expired
+        const isActive = user.approvalStatus === 'APPROVED' && !isExpired;
 
         const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
         const access = getPlanAccessMap(metaFeatures, isActive);
@@ -276,17 +293,20 @@ export class AdminService {
           email: user.email,
           name: user.name,
           phone: user.phone,
-          isApproved: user.isApproved,
-          isPayed: user.isPayed,
           accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
           createdAt: user.createdAt.toISOString(),
           updatedAt: user.updatedAt.toISOString(),
           plan: planName,
           paymentProofUrl: user.paymentProofUrl,
-          paymentMethod: user.paymentMethod, // e.g., BANK_TRANSFER, CreditCard, etc. --- could be null if no plan
+          paymentMethod: user.paymentMethod,
           isActive,
           isExpired,
           access,
+
+          // ✅ expose new step fields (replace old isApproved/isPayed)
+          approvalStatus: user.approvalStatus,
+          paymentStatus: user.paymentStatus,
+
           latestSubmissionStatus: latestSubmission?.status ?? null,
         };
       }),
@@ -298,7 +318,7 @@ export class AdminService {
   /** Helper: fetch users with their LATEST submission only (avoids “mixing”) */
   private async getUsersWithLatestStatus() {
     return this.prisma.user.findMany({
-      where: { isDeleted: false }, // ✅ filter
+      where: { isDeleted: false },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -307,10 +327,13 @@ export class AdminService {
         phone: true,
         paymentProofUrl: true,
         paymentMethod: true,
-        isApproved: true,
         accessExpiresAt: true,
         createdAt: true,
         updatedAt: true,
+        // ✅ new fields
+        approvalStatus: true,
+        paymentStatus: true,
+
         submissions: {
           take: 1,
           orderBy: { createdAt: 'desc' },
@@ -332,12 +355,15 @@ export class AdminService {
         phone: u.phone,
         paymentProofUrl: u.paymentProofUrl,
         paymentMethod: u.paymentMethod,
-        isApproved: u.isApproved,
         accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
         createdAt: u.createdAt?.toISOString() ?? null,
         updatedAt: u.updatedAt?.toISOString() ?? null,
         plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP',
         latestSubmissionStatus: u.submissions?.[0]?.status ?? null,
+
+        // ✅ new
+        approvalStatus: u.approvalStatus,
+        paymentStatus: u.paymentStatus,
       }));
   }
 
@@ -352,14 +378,18 @@ export class AdminService {
         phone: u.phone,
         paymentProofUrl: u.paymentProofUrl,
         paymentMethod: u.paymentMethod,
-        isApproved: u.isApproved,
         accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
         createdAt: u.createdAt?.toISOString() ?? null,
         updatedAt: u.updatedAt?.toISOString() ?? null,
         plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP',
         latestSubmissionStatus: u.submissions?.[0]?.status ?? null,
+
+        // ✅ new
+        approvalStatus: u.approvalStatus,
+        paymentStatus: u.paymentStatus,
       }));
   }
+
   async getPendingUsers() {
     const users = await this.getUsersWithLatestStatus();
     return users
@@ -369,12 +399,15 @@ export class AdminService {
         email: u.email,
         name: u.name,
         phone: u.phone,
-        isApproved: u.isApproved,
         accessExpiresAt: u.accessExpiresAt?.toISOString() ?? null,
         createdAt: u.createdAt?.toISOString() ?? null,
         updatedAt: u.updatedAt?.toISOString() ?? null,
         plan: u.submissions?.[0]?.plan ?? 'NOMEMBERSHIP',
         latestSubmissionStatus: u.submissions?.[0]?.status ?? null,
+
+        // ✅ new
+        approvalStatus: u.approvalStatus,
+        paymentStatus: u.paymentStatus,
       }));
   }
 
@@ -501,22 +534,25 @@ export class AdminService {
     const hash = await bcrypt.hash(dto.password, 10);
 
     let expiresAt: Date | null = null;
+    let approvalStatus: ApprovalStatus = 'NONE';
+    let paymentStatus: PaymentStatus = 'NONE';
 
-    // Get plan duration if plan is passed
     if (dto.plan) {
       const meta = await this.prisma.membershipPlanMeta.findUnique({
         where: { name: dto.plan },
       });
-
       if (!meta || !meta.isActive) {
         throw new BadRequestException(
           '선택한 플랜이 존재하지 않거나 비활성화되었습니다.',
         );
       }
-
       expiresAt = new Date(
         Date.now() + meta.durationDays * 24 * 60 * 60 * 1000,
       );
+
+      // ✅ instantly active
+      approvalStatus = 'APPROVED';
+      paymentStatus = 'COMPLETED';
     }
 
     const user = await this.prisma.user.create({
@@ -527,8 +563,11 @@ export class AdminService {
         phone: dto.phone ?? null,
         role: 'USER',
         paymentMethod: dto.paymentMethod ?? null,
-        isApproved: !!dto.plan,
-        isPayed: !!dto.plan,
+
+        // ✅ new step fields
+        approvalStatus,
+        paymentStatus,
+
         accessExpiresAt: expiresAt,
       },
       select: {
@@ -536,19 +575,19 @@ export class AdminService {
         email: true,
         name: true,
         phone: true,
-        isApproved: true,
+        approvalStatus: true,
+        paymentStatus: true,
         accessExpiresAt: true,
       },
     });
 
-    // Simulate approved PaymentSubmission if plan given
     if (dto.plan) {
       await this.prisma.paymentSubmission.create({
         data: {
           userId: user.id,
           plan: dto.plan,
           paymentMethod: dto.paymentMethod ?? 'BANK_TRANSFER',
-          filePath: 'admin-created', // Dummy
+          filePath: 'admin-created',
           fileOriginalName: 'admin-created',
           status: 'APPROVED',
           reviewedById: adminId,
@@ -584,13 +623,18 @@ export class AdminService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.email !== undefined) data.email = dto.email;
     if (dto.phone !== undefined) data.phone = dto.phone;
-    // if (dto.plan !== undefined) data.plan = dto.plan;
-    if (dto.isApproved !== undefined) data.isApproved = dto.isApproved;
-    if (dto.isPayed !== undefined) data.isPayed = dto.isPayed;
     if (dto.paymentProofUrl !== undefined)
       data.paymentProofUrl = dto.paymentProofUrl;
     if (dto.accessExpiresAt !== undefined)
       data.accessExpiresAt = new Date(dto.accessExpiresAt);
+
+    // ✅ NEW (adjust your DTO to accept these; or map old flags if your FE still sends them)
+    if ((dto as any).approvalStatus !== undefined) {
+      data.approvalStatus = (dto as any).approvalStatus as ApprovalStatus;
+    }
+    if ((dto as any).paymentStatus !== undefined) {
+      data.paymentStatus = (dto as any).paymentStatus as PaymentStatus;
+    }
 
     try {
       const updated = await this.prisma.user.update({
@@ -601,8 +645,8 @@ export class AdminService {
           email: true,
           name: true,
           phone: true,
-          isApproved: true,
-          isPayed: true,
+          approvalStatus: true,
+          paymentStatus: true,
           accessExpiresAt: true,
           paymentProofUrl: true,
           createdAt: true,
@@ -638,9 +682,9 @@ export class AdminService {
       data: {
         isDeleted: true,
         deletedAt: new Date(),
-        // revoke access at the same time
-        isApproved: false,
-        isPayed: false,
+        // ✅ revoke access with new step fields
+        approvalStatus: 'NONE',
+        paymentStatus: 'NONE',
       },
       select: {
         id: true,
@@ -706,13 +750,14 @@ export class AdminService {
         name: true,
         phone: true,
         paymentProofUrl: true,
-        isApproved: true,
-        isPayed: true,
         accessExpiresAt: true,
         createdAt: true,
         updatedAt: true,
         isDeleted: true,
         deletedAt: true,
+        // ✅ new step fields
+        approvalStatus: true,
+        paymentStatus: true,
         submissions: {
           take: 1,
           orderBy: { createdAt: 'desc' },

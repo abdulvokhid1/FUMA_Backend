@@ -11,6 +11,8 @@ import {
   MembershipPlan,
   PaymentMethod,
   SubmissionStatus,
+  PaymentStatus, // ✅ add
+  ApprovalStatus, // ✅ add
   User as PrismaUser,
   User,
 } from '@prisma/client';
@@ -42,8 +44,10 @@ export class UserService {
         password: hash,
         name: dto.name,
         phone: dto.phone,
-        isApproved: false,
-        isPayed: false,
+        // 🔽 초기 상태 (null 대체)
+        paymentStatus: 'NONE',
+        approvalStatus: 'NONE',
+
         paymentProofUrl: null,
         accessExpiresAt: null,
         notifications: {
@@ -98,8 +102,8 @@ export class UserService {
       await this.prisma.user.update({
         where: { id: user.id },
         data: {
-          isApproved: false,
-          isPayed: false,
+          approvalStatus: 'NONE',
+          paymentStatus: 'NONE',
         },
       });
     }
@@ -255,17 +259,39 @@ export class UserService {
       orderBy: { createdAt: 'desc' },
       select: { id: true, status: true, plan: true, createdAt: true },
     });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        paymentStatus: true,
+        approvalStatus: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Default message
     let statusMessage = '❌ 결제 제출 내역이 없습니다.';
-    if (latest?.status === 'PENDING') {
-      statusMessage = '⏳ 결제 승인 대기 중입니다.';
-    } else if (latest?.status === 'APPROVED') {
+
+    // Interpret 3-step fields
+    if (user.paymentStatus === 'VERIFYING') {
+      statusMessage = '💳 결제 확인중입니다.';
+    } else if (user.paymentStatus === 'COMPLETED') {
+      statusMessage = '💰 결제 완료되었습니다.';
+    }
+
+    if (user.approvalStatus === 'PENDING') {
+      statusMessage = '⏳ 관리자 승인 대기중입니다.';
+    } else if (user.approvalStatus === 'APPROVED') {
       statusMessage = '✅ 승인 완료되었습니다.';
-    } else if (latest?.status === 'REJECTED') {
-      statusMessage = '❌ 결제가 거절되었습니다. 다시 제출해 주세요.';
     }
 
     return {
       latest,
+      paymentStatus: user.paymentStatus,
+      approvalStatus: user.approvalStatus,
       statusMessage,
     };
   }
@@ -328,8 +354,9 @@ export class UserService {
         data: {
           paymentMethod: method,
           paymentProofUrl: filePath,
-          isApproved: false,
-          isPayed: false,
+          // ✅ move user into step-2 states
+          paymentStatus: 'VERIFYING' as PaymentStatus,
+          approvalStatus: 'PENDING' as ApprovalStatus,
         },
       });
 
@@ -362,8 +389,8 @@ export class UserService {
         paymentProofUrl: true,
         createdAt: true,
         updatedAt: true,
-        isApproved: true,
-        isPayed: true,
+        paymentStatus: true,
+        approvalStatus: true,
         accessExpiresAt: true,
       },
     });
@@ -392,7 +419,7 @@ export class UserService {
       user.accessExpiresAt !== null &&
       user.accessExpiresAt.getTime() < now.getTime();
 
-    const isActive = !!user.isApproved && !isExpired;
+    const isActive = user.approvalStatus === 'APPROVED' && !isExpired;
 
     // 4. Access flags using centralized utility
     const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
@@ -418,10 +445,15 @@ export class UserService {
       else if (planName === 'BASIC')
         quotas.CONSULT_1ON1 = { monthlyLimit: 2, used: 0 };
     }
+    // ✅ status message based on new steps
     let statusMessage = '✅ Access granted';
-    if (!user.isApproved) {
+    if (user.approvalStatus === 'PENDING') {
       statusMessage = '❗️관리자의 승인을 기다리고 있습니다.';
-    } else if (isExpired) {
+    } else if (user.approvalStatus !== 'APPROVED') {
+      statusMessage =
+        '⛔️ 승인 전 상태입니다. 플랜 결제를 제출하고 승인을 받아주세요.';
+    }
+    if (isExpired) {
       statusMessage = '⛔️ 접근 권한이 만료되었습니다. 플랜을 갱신해 주세요.';
     }
 
@@ -435,8 +467,8 @@ export class UserService {
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
       plan: planName,
-      isApproved: !!user.isApproved,
-      isPayed: !!user.isPayed,
+      paymentStatus: user.paymentStatus, // NONE | VERIFYING | COMPLETED
+      approvalStatus: user.approvalStatus, // NONE | PENDING | APPROVED
       accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
       isExpired,
       isActive,
@@ -459,7 +491,8 @@ export class UserService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        isApproved: true,
+        paymentStatus: true,
+        approvalStatus: true,
         accessExpiresAt: true,
       },
     });
@@ -484,7 +517,7 @@ export class UserService {
       user.accessExpiresAt !== null &&
       user.accessExpiresAt.getTime() < now.getTime();
 
-    const isActive = !!user.isApproved && !isExpired;
+    const isActive = user.approvalStatus === 'APPROVED' && !isExpired;
 
     const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
     const access = getPlanAccessMap(metaFeatures, isActive);
@@ -494,6 +527,9 @@ export class UserService {
       isActive,
       isExpired,
       access,
+
+      paymentStatus: user.paymentStatus,
+      approvalStatus: user.approvalStatus,
     };
   }
 }
