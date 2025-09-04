@@ -6,9 +6,9 @@ import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import * as crypto from 'crypto';
-(global as any).crypto = {
-  randomUUID: crypto.randomUUID,
-};
+// (global as any).crypto = {
+//   randomUUID: crypto.randomUUID,
+// };
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 

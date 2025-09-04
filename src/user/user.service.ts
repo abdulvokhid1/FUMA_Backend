@@ -396,15 +396,23 @@ export class UserService {
     });
 
     if (!user) throw new NotFoundException('User not found');
+    const now = new Date();
 
-    // 1. Get latest approved plan
+    // 1) find latest active grant
+    const activeGrant = await this.prisma.userPlanGrant.findFirst({
+      where: { userId, revokedAt: null, expiresAt: { gt: now } },
+      orderBy: { approvedAt: 'desc' },
+    });
+
+    // 2) keep latest approved submission for plan name fallback
     const latestApproved = await this.prisma.paymentSubmission.findFirst({
       where: { userId, status: 'APPROVED' },
       orderBy: { createdAt: 'desc' },
       select: { plan: true },
     });
 
-    const planName = latestApproved?.plan ?? 'NOMEMBERSHIP';
+    const planName =
+      activeGrant?.plan ?? latestApproved?.plan ?? 'NOMEMBERSHIP';
 
     // 2. Fetch plan metadata
     const planMeta = latestApproved?.plan
@@ -413,17 +421,28 @@ export class UserService {
         })
       : null;
 
-    // 3. Determine access status
-    const now = new Date();
+    // 4) expired/active via user.accessExpiresAt (same as your current logic)
     const isExpired =
-      user.accessExpiresAt !== null &&
-      user.accessExpiresAt.getTime() < now.getTime();
-
+      !!user.accessExpiresAt && user.accessExpiresAt.getTime() < now.getTime();
     const isActive = user.approvalStatus === 'APPROVED' && !isExpired;
 
     // 4. Access flags using centralized utility
-    const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
+    let metaFeatures: Record<string, any> = {};
+    let planLabel = '—';
     const access = getPlanAccessMap(metaFeatures, isActive);
+
+    if (activeGrant) {
+      metaFeatures = (activeGrant.featuresSnapshot as any) ?? {};
+      planLabel = activeGrant.label;
+    } else if (latestApproved?.plan) {
+      const meta = await this.prisma.membershipPlanMeta.findUnique({
+        where: { name: latestApproved.plan },
+      });
+      if (meta) {
+        metaFeatures = (meta.features as any) ?? {};
+        planLabel = meta.label;
+      }
+    }
 
     // 5. Quotas
     const quotas: Record<string, any> = {};
@@ -467,14 +486,15 @@ export class UserService {
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
       plan: planName,
-      paymentStatus: user.paymentStatus, // NONE | VERIFYING | COMPLETED
-      approvalStatus: user.approvalStatus, // NONE | PENDING | APPROVED
+      planLabel, // 👈 NEW
+      paymentStatus: user.paymentStatus,
+      approvalStatus: user.approvalStatus,
       accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
       isExpired,
       isActive,
       access,
       quotas,
-      statusMessage,
+      statusMessage, // keep your existing status message logic
     };
   }
 

@@ -18,8 +18,10 @@ import {
 } from './dto/plan.dto';
 import {
   Prisma,
-  PaymentStatus, // ✅ add
-  ApprovalStatus, // ✅ add
+  MembershipPlan,
+  PaymentMethod,
+  PaymentStatus,
+  ApprovalStatus,
 } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -146,20 +148,33 @@ export class AdminService {
     const planMeta = await this.prisma.membershipPlanMeta.findUnique({
       where: { name: planName },
     });
-
     if (!planMeta || !planMeta.isActive) {
       throw new BadRequestException('선택한 플랜이 비활성화 상태입니다.');
     }
 
     // Calculate new expiry
     const now = new Date();
-    const durationDays = planMeta.durationDays;
     const expiresAt = new Date(
-      now.getTime() + durationDays * 24 * 60 * 60 * 1000,
+      now.getTime() + planMeta.durationDays * 24 * 60 * 60 * 1000,
     );
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Update submission
+      await tx.userPlanGrant.create({
+        data: {
+          userId: submission.userId,
+          plan: submission.plan, // ✅ already MembershipPlan enum
+          label: planMeta.label,
+          featuresSnapshot:
+            planMeta.features === null
+              ? Prisma.JsonNull
+              : (planMeta.features as Prisma.InputJsonValue),
+          priceSnapshot: planMeta.price,
+          durationDays: planMeta.durationDays,
+          approvedAt: now,
+          expiresAt,
+          approvedById: adminId,
+        },
+      });
       await tx.paymentSubmission.update({
         where: { id: submissionId },
         data: {
@@ -189,20 +204,15 @@ export class AdminService {
           plan: submission.plan,
           isRead: false,
         },
-        data: {
-          isApproved: true,
-          isPayed: true,
-        },
+        data: { isApproved: true, isPayed: true },
       });
-
-      // 4. (Optional) AdminLog
       await tx.adminLog.create({
         data: {
           adminId,
           action: 'APPROVE_SUBMISSION',
           targetUserId: submission.userId,
           submissionId: submission.id,
-          note: `플랜 ${planName} 승인됨. 유효기간 ${durationDays}일 설정됨.`,
+          note: `플랜 ${planName} 승인됨. 유효기간 ${planMeta.durationDays}일.`,
         },
       });
     });
@@ -524,91 +534,189 @@ export class AdminService {
     return { message: 'Plan state updated', plan };
   }
 
-  /** Admin creates a new user (password hashed, defaults enforced) */
-  async createUser(dto: CreateUserDto, adminId: number) {
-    const exists = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+  async deletePlan(id: number, adminId: number) {
+    const existing = await this.prisma.membershipPlanMeta.findUnique({
+      where: { id },
     });
-    if (exists) throw new ConflictException('Email already in use');
+    if (!existing) throw new NotFoundException('Plan not found');
 
-    const hash = await bcrypt.hash(dto.password, 10);
-
-    let expiresAt: Date | null = null;
-    let approvalStatus: ApprovalStatus = 'NONE';
-    let paymentStatus: PaymentStatus = 'NONE';
-
-    if (dto.plan) {
-      const meta = await this.prisma.membershipPlanMeta.findUnique({
-        where: { name: dto.plan },
-      });
-      if (!meta || !meta.isActive) {
-        throw new BadRequestException(
-          '선택한 플랜이 존재하지 않거나 비활성화되었습니다.',
-        );
-      }
-      expiresAt = new Date(
-        Date.now() + meta.durationDays * 24 * 60 * 60 * 1000,
-      );
-
-      // ✅ instantly active
-      approvalStatus = 'APPROVED';
-      paymentStatus = 'COMPLETED';
-    }
-
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        password: hash,
-        name: dto.name ?? null,
-        phone: dto.phone ?? null,
-        role: 'USER',
-        paymentMethod: dto.paymentMethod ?? null,
-
-        // ✅ new step fields
-        approvalStatus,
-        paymentStatus,
-
-        accessExpiresAt: expiresAt,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        approvalStatus: true,
-        paymentStatus: true,
-        accessExpiresAt: true,
-      },
-    });
-
-    if (dto.plan) {
-      await this.prisma.paymentSubmission.create({
-        data: {
-          userId: user.id,
-          plan: dto.plan,
-          paymentMethod: dto.paymentMethod ?? 'BANK_TRANSFER',
-          filePath: 'admin-created',
-          fileOriginalName: 'admin-created',
-          status: 'APPROVED',
-          reviewedById: adminId,
-          reviewedAt: new Date(),
-          adminNote: '[Admin Created]',
-        },
-      });
-    }
+    // Hard delete
+    await this.prisma.membershipPlanMeta.delete({ where: { id } });
 
     await this.prisma.adminLog.create({
       data: {
         adminId,
-        action: 'CREATE_USER',
-        targetUserId: user.id,
-        note: dto.plan
-          ? `Created approved user with plan=${dto.plan}`
-          : 'Created user without plan',
+        action: 'DELETE_PLAN_META',
+        note: `${existing.name} (${existing.label}) permanently deleted`,
       },
     });
 
-    return { message: 'User created', user };
+    return { message: 'Plan permanently deleted', id };
+  }
+
+  /** Admin creates a new user (password hashed, defaults enforced) */
+
+  async createUser(dto: CreateUserDto, adminId: number) {
+    // 1) Uniqueness check
+    const exists = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: { id: true },
+    });
+    if (exists) {
+      throw new ConflictException('Email already in use');
+    }
+
+    // 2) Hash password early
+    const hashed = await bcrypt.hash(dto.password, 10);
+
+    // 3) If plan provided, gather & validate meta
+    const hasPlan = !!dto.plan;
+    let planMeta: {
+      name: string; // ✅ meta column is string
+      label: string;
+      features: Prisma.JsonValue;
+      price: number;
+      durationDays: number;
+      isActive: boolean;
+    } | null = null;
+
+    if (hasPlan) {
+      planMeta = await this.prisma.membershipPlanMeta.findUnique({
+        where: { name: dto.plan as unknown as string }, // ✅ enum -> string
+        select: {
+          name: true,
+          label: true,
+          features: true,
+          price: true,
+          durationDays: true,
+          isActive: true,
+        },
+      });
+
+      if (!planMeta || !planMeta.isActive) {
+        throw new BadRequestException(
+          '선택한 플랜이 존재하지 않거나 비활성화되었습니다.',
+        );
+      }
+    }
+
+    // 4) Transaction: create user (+ optional grant + submission) + admin log
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        let expiresAt: Date | null = null;
+        let approvalStatus: ApprovalStatus = 'NONE';
+        let paymentStatus: PaymentStatus = 'NONE';
+
+        if (hasPlan && planMeta) {
+          const now = new Date();
+          expiresAt = new Date(
+            now.getTime() + planMeta.durationDays * 24 * 60 * 60 * 1000,
+          );
+          approvalStatus = 'APPROVED';
+          paymentStatus = 'COMPLETED';
+        }
+
+        // 4a) Create user (authoritative flags set if plan was assigned)
+        const user = await tx.user.create({
+          data: {
+            email: dto.email,
+            password: hashed,
+            name: dto.name ?? null,
+            phone: dto.phone ?? null,
+            role: 'USER',
+            paymentMethod: (dto.paymentMethod as PaymentMethod) ?? null,
+            approvalStatus,
+            paymentStatus,
+            accessExpiresAt: expiresAt,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+            approvalStatus: true,
+            paymentStatus: true,
+            accessExpiresAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        // 4b) If plan assigned, snapshot a durable grant + write approved submission
+        if (hasPlan && planMeta) {
+          const now = new Date();
+          const expiresAt = new Date(
+            now.getTime() + planMeta.durationDays * 24 * 60 * 60 * 1000,
+          );
+
+          // Grant snapshot (crucial for post-delete continuity)
+          await tx.userPlanGrant.create({
+            data: {
+              userId: user.id,
+              plan: dto.plan as MembershipPlan, // ✅ enum value
+              label: planMeta.label,
+              featuresSnapshot:
+                planMeta.features === null
+                  ? Prisma.JsonNull
+                  : (planMeta.features as Prisma.InputJsonValue),
+              priceSnapshot: planMeta.price,
+              durationDays: planMeta.durationDays,
+              approvedAt: now,
+              expiresAt,
+              approvedById: adminId,
+            },
+          });
+
+          // Historical record (approved submission created by admin)
+          await tx.paymentSubmission.create({
+            data: {
+              userId: user.id,
+              plan: dto.plan as MembershipPlan, // ✅
+              paymentMethod:
+                (dto.paymentMethod as PaymentMethod) ?? 'BANK_TRANSFER',
+              filePath: 'admin-created',
+              fileOriginalName: 'admin-created',
+              status: 'APPROVED',
+              reviewedById: adminId,
+              reviewedAt: now,
+              adminNote: '[Admin Created]',
+            },
+          });
+
+          // Ensure user reflects the same expiry/flags (in case future changes occur before next read)
+          await tx.user.update({
+            where: { id: user.id },
+            data: {
+              approvalStatus: 'APPROVED',
+              paymentStatus: 'COMPLETED',
+              accessExpiresAt: expiresAt,
+            },
+          });
+        }
+
+        // 4c) Audit
+        await tx.adminLog.create({
+          data: {
+            adminId,
+            action: 'CREATE_USER',
+            targetUserId: user.id,
+            note: hasPlan
+              ? `Created approved user with plan=${planMeta!.name}`
+              : 'Created user without plan',
+          },
+        });
+
+        return user;
+      });
+
+      return { message: 'User created', user: result };
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        // unique constraint
+        throw new ConflictException('Email already in use');
+      }
+      throw e;
+    }
   }
 
   async updateUser(userId: number, dto: UpdateUserDto, adminId: number) {

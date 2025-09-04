@@ -217,13 +217,13 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard)
   @Delete('plans/:id')
-  softDeletePlan(
+  async deletePlan(
     @CurrentUser() admin: any,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    this.adminService.assertAdmin(admin); // ✅ (add consistency)
-    const adminId = Number(admin?.sub ?? admin?.id); // ✅
-    return this.adminService.togglePlanActive(id, false, adminId);
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id);
+    return this.adminService.deletePlan(id, adminId);
   }
 
   //////

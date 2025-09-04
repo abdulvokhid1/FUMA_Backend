@@ -31,15 +31,15 @@ enum SubmissionStatus {
 }
 
 enum PaymentStatus {
-  NONE       // 초기 (null)
-  VERIFYING  // 결제 확인중
-  COMPLETED  // 결제 완료
+  NONE // 초기 (null)
+  VERIFYING // 결제 확인중
+  COMPLETED // 결제 완료
 }
 
 enum ApprovalStatus {
-  NONE      // 초기 (null)
-  PENDING   // 승인 대기중
-  APPROVED  // 승인 완료
+  NONE // 초기 (null)
+  PENDING // 승인 대기중
+  APPROVED // 승인 완료
 }
 
 /**
@@ -61,8 +61,8 @@ model User {
   password           String
   name               String?
   phone              String?
-  paymentStatus      PaymentStatus    @default(NONE)
-  approvalStatus     ApprovalStatus   @default(NONE)
+  paymentStatus      PaymentStatus       @default(NONE)
+  approvalStatus     ApprovalStatus      @default(NONE)
   accessExpiresAt    DateTime?
   paymentMethod      PaymentMethod?
   paymentProofUrl    String?
@@ -77,6 +77,7 @@ model User {
   resetTokenExpiry   DateTime?
   submissions        PaymentSubmission[]
   notifications      Notification[]
+  planGrants         UserPlanGrant[]     @relation("UserToPlanGrants")
 
   @@index([isDeleted])
 }
@@ -158,4 +159,27 @@ model JobQueue {
   processedAt DateTime?
   status      String // PENDING, COMPLETED, FAILED
   createdAt   DateTime  @default(now())
+}
+
+model UserPlanGrant {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation("UserToPlanGrants", fields: [userId], references: [id])
+
+  // snapshot at approval time
+  plan             MembershipPlan
+  label            String
+  featuresSnapshot Json
+  priceSnapshot    Int
+  durationDays     Int
+
+  approvedAt   DateTime @default(now())
+  expiresAt    DateTime
+  approvedById Int?
+
+  revokedAt    DateTime?
+  revokeReason String?
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
 }
