@@ -78,6 +78,7 @@ export class AdminService {
         user: {
           select: {
             id: true,
+            userNumber: true,
             email: true,
             name: true,
             phone: true,
@@ -116,6 +117,7 @@ export class AdminService {
 
     return users.map((u) => ({
       id: u.id,
+      userNumber: u.userNumber,
       email: u.email,
       name: u.name,
       phone: u.phone,
@@ -300,6 +302,7 @@ export class AdminService {
 
         return {
           id: user.id,
+          userNumber: user.userNumber,
           email: user.email,
           name: user.name,
           phone: user.phone,
@@ -332,6 +335,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        userNumber: true,
         email: true,
         name: true,
         phone: true,
@@ -360,6 +364,7 @@ export class AdminService {
       .filter((u) => u.submissions[0]?.status === 'APPROVED')
       .map((u) => ({
         id: u.id,
+        userNumber: u.userNumber,
         email: u.email,
         name: u.name,
         phone: u.phone,
@@ -383,6 +388,7 @@ export class AdminService {
       .filter((u) => u.submissions[0]?.status === 'REJECTED')
       .map((u) => ({
         id: u.id,
+        userNumber: u.userNumber,
         email: u.email,
         name: u.name,
         phone: u.phone,
@@ -406,6 +412,7 @@ export class AdminService {
       .filter((u) => u.submissions[0]?.status === 'PENDING')
       .map((u) => ({
         id: u.id,
+        userNumber: u.userNumber,
         email: u.email,
         name: u.name,
         phone: u.phone,
@@ -854,6 +861,7 @@ export class AdminService {
       orderBy: { deletedAt: 'desc' },
       select: {
         id: true,
+        userNumber: true,
         email: true,
         name: true,
         phone: true,

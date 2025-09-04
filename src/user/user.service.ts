@@ -38,29 +38,41 @@ export class UserService {
 
     const hash = await bcrypt.hash(dto.password, 10);
 
+    // 🔢 Find the highest userNumber
+    const latestUser = await this.prisma.user.findFirst({
+      where: { userNumber: { not: null } },
+      orderBy: { userNumber: 'desc' },
+      select: { userNumber: true },
+    });
+
+    const nextUserNumber = latestUser?.userNumber
+      ? latestUser.userNumber + 1
+      : 80000;
+
     const user = await this.prisma.user.create({
       data: {
+        userNumber: nextUserNumber, // ✅ assign here
         email: dto.email,
         password: hash,
         name: dto.name,
         phone: dto.phone,
-        // 🔽 초기 상태 (null 대체)
         paymentStatus: 'NONE',
         approvalStatus: 'NONE',
-
-        paymentProofUrl: null,
-        accessExpiresAt: null,
         notifications: {
           create: {
             type: 'USER_REGISTERED',
-            message: `🆕 New user registered: ${dto.email}`,
+            message: `🆕 New user #${nextUserNumber}: ${dto.email}`,
           },
         },
       },
-      include: { notifications: true }, // optional
+      include: { notifications: true },
     });
 
-    return { message: 'Registration successful', userId: user.id };
+    return {
+      message: 'Registration successful',
+      userId: user.id,
+      userNumber: user.userNumber, // ✅ return userNumber too
+    };
   }
 
   async login(dto: { email: string; password: string }) {
@@ -385,6 +397,7 @@ export class UserService {
       where: { id: userId },
       select: {
         id: true,
+        userNumber: true,
         email: true,
         name: true,
         phone: true,
@@ -474,6 +487,7 @@ export class UserService {
 
     return {
       id: user.id,
+      userNumber: user.userNumber,
       email: user.email,
       name: user.name,
       phone: user.phone,

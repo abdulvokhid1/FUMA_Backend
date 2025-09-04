@@ -81,13 +81,20 @@ export class AdminController {
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
-          select: { id: true, name: true, email: true, phone: true },
+          select: {
+            id: true,
+            userNumber: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
         },
       },
     });
 
     return notis.map((n) => ({
       id: n.id,
+      userNumber: n.user.userNumber,
       userId: n.userId,
       email: n.user.email,
       name: n.user.name,
