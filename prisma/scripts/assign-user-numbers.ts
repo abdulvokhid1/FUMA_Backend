@@ -25,3 +25,5 @@ main()
     console.error(err);
     process.exit(1);
   });
+
+// npx ts-node prisma/scripts/assign-user-numbers.ts
