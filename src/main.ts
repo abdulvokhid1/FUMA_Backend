@@ -9,6 +9,15 @@ import * as crypto from 'crypto';
 // (global as any).crypto = {
 //   randomUUID: crypto.randomUUID,
 // };
+
+if (!globalThis.crypto) {
+  (globalThis as any).crypto = {
+    // Provide the subset used by most libs
+    randomUUID: crypto.randomUUID,
+    getRandomValues: (arr: Uint8Array) =>
+      crypto.randomBytes(arr.length).copy(arr),
+  };
+}
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
