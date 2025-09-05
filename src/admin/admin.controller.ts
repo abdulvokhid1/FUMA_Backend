@@ -13,6 +13,8 @@ import {
   ValidationPipe,
   Patch,
   Delete,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { LoginDto } from './dto/login-admin.dto';
@@ -23,6 +25,15 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatePlanDto, TogglePlanDto, UpdatePlanDto } from './dto/plan.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+
+function planFileName(_, file: Express.Multer.File, cb: Function) {
+  const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  cb(null, `${file.fieldname}-${unique}${extname(file.originalname)}`);
+}
 
 @Controller('admin')
 export class AdminController {
@@ -297,5 +308,47 @@ export class AdminController {
   getUserPlanSummary(@CurrentUser() admin: any) {
     this.adminService.assertAdmin(admin);
     return this.adminService.getUserPlanSummary();
+  }
+
+  // ========= Plan file management =========
+
+  @UseGuards(JwtAuthGuard)
+  @Post('plans/:id/files')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'fileA', maxCount: 1 },
+        { name: 'fileB', maxCount: 1 },
+      ],
+      {
+        storage: diskStorage({
+          destination: 'uploads/plan_files',
+          filename: planFileName,
+        }),
+        limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+      },
+    ),
+  )
+  async uploadPlanFiles(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles()
+    files: { fileA?: Express.Multer.File[]; fileB?: Express.Multer.File[] },
+  ) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id);
+    return this.adminService.uploadPlanFiles(id, files, adminId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('plans/:id/files/clear')
+  async clearPlanFile(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body('slot') slot: 'A' | 'B',
+  ) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id);
+    return this.adminService.clearPlanFile(id, slot, adminId);
   }
 }

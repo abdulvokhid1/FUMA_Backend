@@ -6,18 +6,15 @@ import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import * as crypto from 'crypto';
-// (global as any).crypto = {
-//   randomUUID: crypto.randomUUID,
-// };
 
 if (!globalThis.crypto) {
   (globalThis as any).crypto = {
-    // Provide the subset used by most libs
     randomUUID: crypto.randomUUID,
     getRandomValues: (arr: Uint8Array) =>
       crypto.randomBytes(arr.length).copy(arr),
   };
 }
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
@@ -25,9 +22,14 @@ async function bootstrap() {
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
   // Security
-  app.use(helmet());
+  app.use(
+    helmet({
+      // ✅ Let other origins fetch binary assets (downloads, images, etc.)
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
-  // CORS
+  // ✅ CORS: allow your frontends + expose headers needed by fetch()
   app.enableCors({
     origin: [
       'https://www.fumatrade.net',
@@ -38,14 +40,13 @@ async function bootstrap() {
       'https://fuma-trade-tgn1.vercel.app',
     ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    // ✅ THIS is critical so the browser can see Content-Disposition
+    exposedHeaders: ['Content-Disposition', 'Content-Type', 'Content-Length'],
   });
 
-  // Allow CDN/Next Image to fetch /uploads
-  app.use('/uploads', (req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-  });
+  // (You no longer need the custom /uploads middleware block)
 
   // Global error & validation
   app.useGlobalFilters(new HttpExceptionFilter());
@@ -72,8 +73,7 @@ async function bootstrap() {
     }),
   );
 
-  // Listen
-  const port = Number(process.env.PORT) || 3001; // ConfigModule already loaded globally
+  const port = Number(process.env.PORT) || 3001;
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server running on http://localhost:${port}`);
 }

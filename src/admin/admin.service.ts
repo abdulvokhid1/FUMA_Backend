@@ -27,6 +27,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
 
+import { Express } from 'express';
+
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -934,5 +936,90 @@ export class AdminService {
     }));
 
     return { summary };
+  }
+
+  ////////////////////
+
+  async uploadPlanFiles(
+    planId: number,
+    files: { fileA?: Express.Multer.File[]; fileB?: Express.Multer.File[] },
+    adminId: number,
+  ) {
+    const plan = await this.prisma.membershipPlanMeta.findUnique({
+      where: { id: planId },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+
+    const data: Prisma.MembershipPlanMetaUpdateInput = {};
+    const now = new Date();
+
+    if (files.fileA?.[0]) {
+      const f = files.fileA[0];
+      data.fileAPath = `/uploads/plan_files/${f.filename}`;
+      data.fileAName = f.originalname;
+      data.fileAUpdatedAt = now;
+    }
+    if (files.fileB?.[0]) {
+      const f = files.fileB[0];
+      data.fileBPath = `/uploads/plan_files/${f.filename}`;
+      data.fileBName = f.originalname;
+      data.fileBUpdatedAt = now;
+    }
+
+    if (!Object.keys(data).length) {
+      throw new BadRequestException('No files uploaded');
+    }
+
+    const updated = await this.prisma.membershipPlanMeta.update({
+      where: { id: planId },
+      data,
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'UPLOAD_PLAN_FILES',
+        note: `Plan ${plan.name} (${plan.label}) uploaded: ${[
+          files.fileA?.[0] ? 'A' : null,
+          files.fileB?.[0] ? 'B' : null,
+        ]
+          .filter(Boolean)
+          .join(', ')}`,
+      },
+    });
+
+    return { message: 'Files uploaded', plan: updated };
+  }
+
+  ////////
+
+  async clearPlanFile(planId: number, slot: 'A' | 'B', adminId: number) {
+    const plan = await this.prisma.membershipPlanMeta.findUnique({
+      where: { id: planId },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+    if (!['A', 'B'].includes(slot)) {
+      throw new BadRequestException('slot must be A or B');
+    }
+
+    const data: Prisma.MembershipPlanMetaUpdateInput =
+      slot === 'A'
+        ? { fileAPath: null, fileAName: null, fileAUpdatedAt: null }
+        : { fileBPath: null, fileBName: null, fileBUpdatedAt: null };
+
+    const updated = await this.prisma.membershipPlanMeta.update({
+      where: { id: planId },
+      data,
+    });
+
+    await this.prisma.adminLog.create({
+      data: {
+        adminId,
+        action: 'CLEAR_PLAN_FILE',
+        note: `Plan ${plan.name} cleared file ${slot}`,
+      },
+    });
+
+    return { message: `File ${slot} cleared`, plan: updated };
   }
 }

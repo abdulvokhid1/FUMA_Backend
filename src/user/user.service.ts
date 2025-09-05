@@ -572,4 +572,72 @@ export class UserService {
       approvalStatus: user.approvalStatus,
     };
   }
+
+  private async getActiveGrantPlan(userId: number) {
+    const now = new Date();
+    const grant = await this.prisma.userPlanGrant.findFirst({
+      where: { userId, revokedAt: null, expiresAt: { gt: now } },
+      orderBy: { approvedAt: 'desc' },
+      select: { plan: true },
+    });
+    return grant?.plan ?? null;
+  }
+
+  async getMyPlanFilesMeta(userId: number) {
+    const plan = await this.getActiveGrantPlan(userId);
+    if (!plan) {
+      throw new UnauthorizedException('No active membership');
+    }
+
+    const meta = await this.prisma.membershipPlanMeta.findFirst({
+      where: { name: plan, isActive: true },
+      select: {
+        name: true,
+        fileAName: true,
+        fileAUpdatedAt: true,
+        fileBName: true,
+        fileBUpdatedAt: true,
+      },
+    });
+    if (!meta) throw new UnauthorizedException('Plan not available');
+
+    return {
+      plan: meta.name,
+      files: {
+        A: {
+          name: meta.fileAName ?? null,
+          updatedAt: meta.fileAUpdatedAt ?? null,
+        },
+        B: {
+          name: meta.fileBName ?? null,
+          updatedAt: meta.fileBUpdatedAt ?? null,
+        },
+      },
+    };
+  }
+
+  async getMyPlanFilePath(userId: number, slot: 'A' | 'B') {
+    if (!['A', 'B'].includes(slot))
+      throw new BadRequestException('Invalid slot');
+
+    const plan = await this.getActiveGrantPlan(userId);
+    if (!plan) throw new UnauthorizedException('No active membership');
+
+    const meta = await this.prisma.membershipPlanMeta.findFirst({
+      where: { name: plan, isActive: true },
+      select: {
+        fileAPath: true,
+        fileAName: true,
+        fileBPath: true,
+        fileBName: true,
+      },
+    });
+    if (!meta) throw new UnauthorizedException('Plan not available');
+
+    const path = slot === 'A' ? meta.fileAPath : meta.fileBPath;
+    const name = slot === 'A' ? meta.fileAName : meta.fileBName;
+    if (!path) throw new UnauthorizedException('File not available');
+
+    return { path, name: name ?? `file-${slot}` };
+  }
 }

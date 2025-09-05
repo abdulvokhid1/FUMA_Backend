@@ -19,6 +19,11 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { multerOptions } from '../utils/multer-options';
 import { ForgotPasswordDto, ResetPasswordDto } from './dto/forgot-password.dto';
 
+import { Param, Res } from '@nestjs/common';
+import { Response } from 'express';
+import { join } from 'path';
+import * as mime from 'mime-types';
+
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -92,5 +97,46 @@ export class UserController {
   @Get('access')
   async getAccessOnly(@CurrentUser() user: User) {
     return this.userService.getAccessOnly(user.id);
+  }
+  n;
+
+  @UseGuards(JwtAuthGuard)
+  @Get('my-plan/files/meta')
+  async myPlanFilesMeta(@CurrentUser() user: User) {
+    return this.userService.getMyPlanFilesMeta(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('my-plan/files/:slot')
+  async myPlanDownload(
+    @CurrentUser() user: User,
+    @Param('slot') slot: 'A' | 'B',
+    @Res() res: Response,
+  ) {
+    const { path, name } = await this.userService.getMyPlanFilePath(
+      user.id,
+      slot,
+    );
+
+    const abs = join(
+      process.cwd(),
+      path.startsWith('/') ? path.slice(1) : path,
+    );
+    const contentType = mime.lookup(name) || 'application/octet-stream';
+    const encoded = encodeURIComponent(name);
+
+    // ✅ correct headers
+    res.setHeader('Content-Type', contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${name.replace(/"/g, '\\"')}"; filename*=UTF-8''${encoded}`,
+    );
+    // ✅ make it readable by fetch()
+    res.setHeader(
+      'Access-Control-Expose-Headers',
+      'Content-Disposition, Content-Type',
+    );
+
+    return res.sendFile(abs);
   }
 }

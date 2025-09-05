@@ -139,6 +139,13 @@ model MembershipPlanMeta {
   features     Json
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
+
+  fileAPath      String?
+  fileAName      String?
+  fileAUpdatedAt DateTime?
+  fileBPath      String?
+  fileBName      String?
+  fileBUpdatedAt DateTime?
 }
 
 model AdminLog {
