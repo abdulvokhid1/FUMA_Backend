@@ -221,11 +221,14 @@ export class AdminService {
       });
     });
 
-    return { message: '승인이 완료되었습니다.', accessExpiresAt: expiresAt };
+    return {
+      message: '승인이 완료되었습니다.',
+      approvedAt: now,
+      accessExpiresAt: expiresAt,
+    };
   }
 
-  /** REJECT (atomic, idempotent, race-safe) */
-  // signature
+  // admin.service.ts — Replace the whole method
   async rejectSubmission(submissionId: number, adminId: number) {
     return this.prisma.$transaction(async (tx) => {
       const submission = await tx.paymentSubmission.findUnique({
@@ -234,12 +237,10 @@ export class AdminService {
       });
       if (!submission)
         throw new NotFoundException('해당 결제 제출이 존재하지 않습니다.');
-      if (submission.status === 'REJECTED') {
+      if (submission.status === 'REJECTED')
         return { message: '이미 거절된 제출입니다.', submissionId };
-      }
-      if (submission.status === 'APPROVED') {
+      if (submission.status === 'APPROVED')
         throw new BadRequestException('이미 승인된 제출은 거절할 수 없습니다.');
-      }
 
       // 1) mark submission rejected
       const updated = await tx.paymentSubmission.update({
@@ -251,13 +252,36 @@ export class AdminService {
         },
       });
 
-      // 2) reset user step statuses (optional clear proof)
+      // 2) If there is NO active grant, clear accessExpiresAt; otherwise keep it
+      const now = new Date();
+      const activeGrant = await tx.userPlanGrant.findFirst({
+        where: {
+          userId: submission.userId,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        select: { id: true },
+      });
+
       await tx.user.update({
         where: { id: submission.userId },
         data: {
           paymentStatus: 'NONE',
           approvalStatus: 'NONE',
-          // paymentProofUrl: null,    // ← enable if you want to clear
+          accessExpiresAt: activeGrant ? undefined : null, // ← key line
+          // paymentProofUrl: null, // optional
+        },
+      });
+
+      await tx.adminLog.create({
+        data: {
+          adminId,
+          action: 'REJECT_SUBMISSION',
+          targetUserId: submission.userId,
+          submissionId: submission.id,
+          note: activeGrant
+            ? '거절(기존 활성 권한 유지)'
+            : '거절(만료일 초기화)',
         },
       });
 
@@ -265,6 +289,7 @@ export class AdminService {
     });
   }
 
+  /** Generic user listing (no status filter) */
   /** Generic user listing (no status filter) */
   async getAllUsers() {
     const users = await this.prisma.user.findMany({
@@ -283,24 +308,61 @@ export class AdminService {
 
     const enriched = await Promise.all(
       users.map(async (user) => {
-        const latestSubmission = user.submissions[0];
-        const planName = latestSubmission?.plan ?? 'NOMEMBERSHIP';
-
-        const planMeta = latestSubmission?.plan
-          ? await this.prisma.membershipPlanMeta.findUnique({
-              where: { name: latestSubmission.plan },
-            })
-          : null;
-
+        // ---- status gates
         const isExpired =
           user.accessExpiresAt !== null &&
           user.accessExpiresAt.getTime() < now.getTime();
 
-        // ✅ Active = approved & not expired
         const isActive = user.approvalStatus === 'APPROVED' && !isExpired;
 
-        const metaFeatures = (planMeta?.features as Record<string, any>) ?? {};
-        const access = getPlanAccessMap(metaFeatures, isActive);
+        // ---- only look at a grant when truly ACTIVE
+        const latestGrant = isActive
+          ? await this.getLatestActiveGrant(user.id) // select: { plan, approvedAt, expiresAt }
+          : null;
+
+        // plan & timing are visible ONLY when active + has a grant
+        let planName: string = 'NOMEMBERSHIP';
+        let approvedAt: string | null = null;
+        let expiresAt: string | null = null;
+        let remainingDays: number | null = null;
+        let remainingPercent: number | null = null;
+
+        if (latestGrant) {
+          planName = latestGrant.plan; // MembershipPlan enum value
+          const timing = this.computeRemaining(
+            latestGrant.expiresAt,
+            latestGrant.approvedAt,
+          );
+          approvedAt = timing.approvedAt
+            ? timing.approvedAt.toISOString()
+            : null;
+          expiresAt = timing.expiresAt ? timing.expiresAt.toISOString() : null;
+          remainingDays = timing.remainingDays;
+          remainingPercent = timing.remainingPercent;
+        }
+
+        // features (and thus access flags) also only derive from an active grant
+        // If inactive, we pass empty features so all access gates = false
+        const metaFeatures = latestGrant
+          ? ((
+              await this.prisma.userPlanGrant.findFirst({
+                where: {
+                  userId: user.id,
+                  revokedAt: null,
+                  expiresAt: { gt: now },
+                },
+                orderBy: { approvedAt: 'desc' },
+                select: { featuresSnapshot: true },
+              })
+            )?.featuresSnapshot ?? {})
+          : {};
+
+        const access = getPlanAccessMap(
+          metaFeatures as Record<string, any>,
+          isActive,
+        );
+
+        const latestSubmission = user.submissions[0];
 
         return {
           id: user.id,
@@ -308,20 +370,32 @@ export class AdminService {
           email: user.email,
           name: user.name,
           phone: user.phone,
-          accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
+          paymentMethod: user.paymentMethod,
+          paymentProofUrl: user.paymentProofUrl,
+
           createdAt: user.createdAt.toISOString(),
           updatedAt: user.updatedAt.toISOString(),
+          accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,
+
+          // ✅ show only active plan; otherwise NOMEMBERSHIP
           plan: planName,
-          paymentProofUrl: user.paymentProofUrl,
-          paymentMethod: user.paymentMethod,
+
+          // ✅ timing only when active
+          approvedAt,
+          expiresAt,
+          remainingDays,
+          remainingPercent,
+          registeredAt: user.createdAt.toISOString(),
+          // gates
           isActive,
           isExpired,
           access,
 
-          // ✅ expose new step fields (replace old isApproved/isPayed)
+          // new step fields (authoritative)
           approvalStatus: user.approvalStatus,
           paymentStatus: user.paymentStatus,
 
+          // FYI on latest submission state
           latestSubmissionStatus: latestSubmission?.status ?? null,
         };
       }),
@@ -1021,5 +1095,84 @@ export class AdminService {
     });
 
     return { message: `File ${slot} cleared`, plan: updated };
+  }
+
+  // admin.service.ts
+  async revokeActiveGrant(userId: number, adminId: number, reason?: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const grant = await tx.userPlanGrant.findFirst({
+        where: { userId, revokedAt: null, expiresAt: { gt: now } },
+        orderBy: { approvedAt: 'desc' },
+      });
+      if (!grant) return { message: '활성 권한이 없습니다.' };
+
+      await tx.userPlanGrant.update({
+        where: { id: grant.id },
+        data: { revokedAt: now, revokeReason: reason ?? 'Admin revoke' },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          approvalStatus: 'NONE',
+          paymentStatus: 'NONE',
+          accessExpiresAt: null,
+        },
+      });
+
+      await tx.adminLog.create({
+        data: {
+          adminId,
+          action: 'REVOKE_ACTIVE_GRANT',
+          targetUserId: userId,
+          note: `grantId=${grant.id} ${reason ?? ''}`.trim(),
+        },
+      });
+
+      return {
+        message: '사용자 활성 권한을 해지했습니다.',
+        revokedGrantId: grant.id,
+      };
+    });
+  }
+
+  // admin.service.ts — add helpers near other private methods
+  private computeRemaining(expiresAt: Date | null, approvedAt?: Date | null) {
+    if (!expiresAt)
+      return {
+        approvedAt: approvedAt ?? null,
+        expiresAt: null,
+        remainingDays: null,
+        remainingPercent: null,
+      };
+    const now = new Date();
+    const total = approvedAt
+      ? expiresAt.getTime() - approvedAt.getTime()
+      : null;
+    const leftMs = expiresAt.getTime() - now.getTime();
+    const remainingDays = Math.max(
+      0,
+      Math.ceil(leftMs / (24 * 60 * 60 * 1000)),
+    );
+    const remainingPercent =
+      total && total > 0
+        ? Math.max(0, Math.min(100, Math.round((leftMs / total) * 100)))
+        : null;
+    return {
+      approvedAt: approvedAt ?? null,
+      expiresAt,
+      remainingDays,
+      remainingPercent,
+    };
+  }
+
+  private async getLatestActiveGrant(userId: number) {
+    const now = new Date();
+    return this.prisma.userPlanGrant.findFirst({
+      where: { userId, revokedAt: null, expiresAt: { gt: now } },
+      orderBy: { approvedAt: 'desc' },
+      select: { plan: true, approvedAt: true, expiresAt: true },
+    });
   }
 }

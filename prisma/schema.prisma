@@ -105,16 +105,14 @@ model PaymentSubmission {
 }
 
 model Notification {
-  id         Int             @id @default(autoincrement())
-  type       String
-  message    String
-  userId     Int
-  user       User            @relation(fields: [userId], references: [id])
-  plan       MembershipPlan?
-  isApproved Boolean         @default(false)
-  isPayed    Boolean         @default(false)
-  isRead     Boolean         @default(false)
-  createdAt  DateTime        @default(now())
+  id        Int      @id @default(autoincrement())
+  type      String
+  message   String
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  plan      MembershipPlan?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model Faq {

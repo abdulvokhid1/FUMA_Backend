@@ -351,4 +351,16 @@ export class AdminController {
     const adminId = Number(admin?.sub ?? admin?.id);
     return this.adminService.clearPlanFile(id, slot, adminId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('users/:id/revoke')
+  async revokeActiveGrant(
+    @CurrentUser() admin: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body('reason') reason?: string,
+  ) {
+    this.adminService.assertAdmin(admin);
+    const adminId = Number(admin?.sub ?? admin?.id);
+    return this.adminService.revokeActiveGrant(id, adminId, reason);
+  }
 }
