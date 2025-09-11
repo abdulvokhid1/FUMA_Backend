@@ -26,7 +26,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "express:dev": "node src/server.express.js"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.3",
@@ -45,8 +46,10 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
+    "express": "^5.1.0",
     "helmet": "^8.1.0",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
@@ -61,7 +64,8 @@
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@types/bull": "^3.15.9",
-    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
     "@types/jest": "^29.5.14",
     "@types/multer": "^2.0.0",
     "@types/node": "^22.16.5",

@@ -8,6 +8,8 @@ import { FaqModule } from './faq/faq.module';
 import { JobsModule } from './jobs/jobs.module';
 import { JobController } from './jobs/job.controller';
 import { PrismaService } from '../prisma/prisma.service';
+import { TradingModule } from './trading/trading.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { PrismaService } from '../prisma/prisma.service';
     UserModule,
     FaqModule,
     JobsModule,
+    TradingModule,
+    ScheduleModule.forRoot(),
   ],
   controllers: [AppController, JobController],
   providers: [
