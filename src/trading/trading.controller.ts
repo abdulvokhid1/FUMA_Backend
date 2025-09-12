@@ -8,17 +8,31 @@ export class TradingController {
 
   @Post('order')
   addOrder(@Body() body: any) {
+    console.log('받은 raw body:', body);
+    console.log('body type:', typeof body);
+    console.log('body keys:', Object.keys(body));
+
     let order: any = {};
     try {
-      if (typeof body === 'object' && Object.keys(body).length === 1) {
-        const key = Object.keys(body)[0];
-        order = JSON.parse(key);
-      } else {
-        order = body;
+      if (typeof body === 'object' && body !== null) {
+        if (
+          Object.keys(body).length === 1 &&
+          typeof body[Object.keys(body)[0]] === 'string'
+        ) {
+          // body가 {"json_string": ...} 형태인 경우
+          const key = Object.keys(body)[0];
+          order = JSON.parse(key);
+        } else {
+          // body가 이미 객체인 경우
+          order = body;
+        }
       }
-    } catch {
+    } catch (error) {
+      console.log('파싱 에러:', error);
       order = {};
     }
+
+    console.log('파싱된 order:', order);
     this.tradingService.addOrder(order);
     return { success: true };
   }
