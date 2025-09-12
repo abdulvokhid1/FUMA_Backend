@@ -13,17 +13,25 @@ export class TradingController {
     console.log('body keys:', Object.keys(body));
 
     let order: any = {};
+
     try {
       if (typeof body === 'object' && body !== null) {
+        // 🛠 Case A: MT5 / weird sender sends {"{\"type\":5,...}\x00": ""}
         if (
           Object.keys(body).length === 1 &&
-          typeof body[Object.keys(body)[0]] === 'string'
+          Object.keys(body)[0].startsWith('{')
         ) {
-          // body가 {"json_string": ...} 형태인 경우
           const key = Object.keys(body)[0];
-          order = JSON.parse(key);
-        } else {
-          // body가 이미 객체인 경우
+
+          // Remove null bytes + trim
+          const cleaned = key.replace(/\x00/g, '').trim();
+
+          console.log('🛠 Cleaned raw string:', cleaned);
+
+          order = JSON.parse(cleaned);
+        }
+        // 🛠 Case B: Already a normal JSON object {type:5,...}
+        else {
           order = body;
         }
       }
