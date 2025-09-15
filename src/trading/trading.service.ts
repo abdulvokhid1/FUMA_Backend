@@ -16,17 +16,17 @@ export class TradingService {
   async addOrder(order: any) {
     this.orders.push(order);
 
-    // accountNumber now comes via "lots" (could be number or string)
-    const accountNumber =
+    const accountNumberRaw =
       order?.accountNumber ??
       (order?.lots !== undefined && order?.lots !== null
         ? String(order.lots).trim()
         : null);
 
-    if (!accountNumber) {
-      // no account number, nothing to resolve
+    if (!accountNumberRaw) {
       return null;
     }
+
+    const accountNumber = String(accountNumberRaw).trim();
 
     const user = await this.prisma.user.findUnique({
       where: { accountNumber },
