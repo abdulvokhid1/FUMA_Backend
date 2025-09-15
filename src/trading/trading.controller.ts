@@ -28,11 +28,10 @@ export class TradingController {
       raw = {};
     }
 
-    // ✅ Normalize incoming fields:
-    // infoCode => orderNo; lots => accountNumber
+    // ✅ Normalize incoming fields
     const normalized = {
       ...raw,
-      orderNo: raw.orderNo ?? raw.infoCode ?? null,
+      infoCode: raw.infoCode ?? null,
       accountNumber:
         raw.accountNumber ??
         (raw.lots !== undefined && raw.lots !== null
@@ -44,10 +43,11 @@ export class TradingController {
 
     const matchedUser = await this.tradingService.addOrder(normalized);
 
+    // ✅ Always respond with infoCode = 1818
     return {
       success: true,
       message: '레오 받았습니다',
-      orderNo: normalized.orderNo,
+      infoCode: 1818,
       accountNumber: normalized.accountNumber,
       status: 'OK',
       serverTime: new Date().toISOString(),

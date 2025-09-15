@@ -1,5 +1,4 @@
-// trading.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -49,7 +48,7 @@ export class TradingService {
     return this.orders;
   }
 
-  // Keep dashboard formatter; use infoCode as the round if present
+  // Dashboard data
   getTradingData() {
     const toNumber = (v: any): number => {
       if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -63,13 +62,13 @@ export class TradingService {
     };
 
     const tradingData = this.orders.map((order, index) => ({
-      round: order.infoCode ?? order.orderNo ?? index + 1,
-      // "lots" is now an accountNumber; don’t treat it as numeric contracts
-      contracts: order.contracts !== undefined ? toNumber(order.contracts) : 0,
+      round: order.infoCode ?? index + 1, // ✅ only infoCode now
+      contracts: 0, // ✅ no longer valid (lots → accountNumber)
       loss: Math.trunc(toNumber(order.price)) || 0,
       mark: Math.trunc(toNumber(order.price)) >= 0 ? 'W' : 'L',
       accountNumber:
-        order.accountNumber ?? (order.lots ? String(order.lots) : null),
+        order.accountNumber ??
+        (order.lots !== undefined ? String(order.lots) : null),
     }));
 
     const totalLoss = tradingData.reduce((sum, i) => sum + i.loss, 0);
