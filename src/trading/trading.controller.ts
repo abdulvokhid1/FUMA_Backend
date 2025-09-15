@@ -8,30 +8,17 @@ export class TradingController {
 
   @Post('order')
   addOrder(@Body() body: any) {
-    console.log('받은 raw body:', body);
-    console.log('body type:', typeof body);
-    console.log('body keys:', Object.keys(body));
-
     let order: any = {};
-
     try {
       if (typeof body === 'object' && body !== null) {
-        // 🛠 Case A: MT5 / weird sender sends {"{\"type\":5,...}\x00": ""}
         if (
           Object.keys(body).length === 1 &&
           Object.keys(body)[0].startsWith('{')
         ) {
           const key = Object.keys(body)[0];
-
-          // Remove null bytes + trim
           const cleaned = key.replace(/\x00/g, '').trim();
-
-          console.log('🛠 Cleaned raw string:', cleaned);
-
           order = JSON.parse(cleaned);
-        }
-        // 🛠 Case B: Already a normal JSON object {type:5,...}
-        else {
+        } else {
           order = body;
         }
       }
@@ -42,7 +29,16 @@ export class TradingController {
 
     console.log('파싱된 order:', order);
     this.tradingService.addOrder(order);
-    return { success: true };
+
+    // 👉 send extra info back
+    return {
+      success: true,
+      message: 'Order received',
+      orderNo: order.orderNo,
+      contracts: order.lots,
+      status: 'OK',
+      serverTime: new Date().toISOString(),
+    };
   }
 
   @Get('orders')
