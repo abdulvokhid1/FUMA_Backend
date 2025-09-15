@@ -33,7 +33,7 @@ export class TradingController {
     // 👉 send extra info back
     return {
       success: true,
-      message: 'Order received',
+      message: '레오 받았습니다',
       orderNo: order.orderNo,
       contracts: order.lots,
       status: 'OK',
