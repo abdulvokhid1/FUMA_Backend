@@ -139,4 +139,13 @@ export class UserController {
 
     return res.sendFile(abs);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('create-account-number')
+  async createAccountNumber(
+    @CurrentUser() user: User,
+    @Body('accountNumber') accountNumber: string,
+  ) {
+    return this.userService.createAccountNumber(user.id, accountNumber);
+  }
 }

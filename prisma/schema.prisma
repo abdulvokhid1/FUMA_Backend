@@ -62,7 +62,7 @@ model User {
   password           String
   name               String?
   phone              String?
-  
+  accountNumber      String?             @unique  // 👈 new field
   paymentStatus      PaymentStatus       @default(NONE)
   approvalStatus     ApprovalStatus      @default(NONE)
   accessExpiresAt    DateTime?

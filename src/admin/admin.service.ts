@@ -208,8 +208,9 @@ export class AdminService {
           plan: submission.plan,
           isRead: false,
         },
-        data: { isApproved: true, isPayed: true },
+        data: { isRead: true }, // ✅ only use existing fields
       });
+
       await tx.adminLog.create({
         data: {
           adminId,

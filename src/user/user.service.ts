@@ -380,8 +380,6 @@ export class UserService {
           message: `📩 ${user.name || user.email}님이 '${planName}' 플랜 결제를 제출했습니다.`,
           plan: planName,
           isRead: false,
-          isApproved: false,
-          isPayed: false,
         },
       });
     });
@@ -678,5 +676,29 @@ export class UserService {
     if (!path) throw new UnauthorizedException('File not available');
 
     return { path, name: name ?? `file-${slot}` };
+  }
+
+  async createAccountNumber(userId: number, accountNumber: string) {
+    if (!accountNumber || !accountNumber.trim()) {
+      throw new BadRequestException('계좌번호를 입력해주세요.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('유저를 찾을 수 없습니다.');
+
+    if (user.accountNumber) {
+      throw new BadRequestException('이미 계좌번호가 등록되었습니다.');
+    }
+
+    // Save the account number typed by user
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { accountNumber },
+    });
+
+    return {
+      message: '계좌번호가 등록되었습니다.',
+      accountNumber: updated.accountNumber,
+    };
   }
 }
