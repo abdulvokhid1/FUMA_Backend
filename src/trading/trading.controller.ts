@@ -43,6 +43,16 @@ export class TradingController {
 
     const matchedUser = await this.tradingService.addOrder(normalized);
 
+    // ✅ Decide AckInfo
+    let AckInfo = 0;
+    if (matchedUser?.accessExpiresAt) {
+      const now = new Date();
+      const expiry = new Date(matchedUser.accessExpiresAt);
+      if (expiry.getTime() > now.getTime()) {
+        AckInfo = 1;
+      }
+    }
+
     // ✅ Always respond with infoCode = 1818
     return {
       success: true,
@@ -51,7 +61,7 @@ export class TradingController {
       accountNumber: normalized.accountNumber,
       status: 'OK',
       serverTime: new Date().toISOString(),
-      AckInfo: 1000,
+      AckInfo, // 👈 dynamic now
       user: matchedUser
         ? {
             id: matchedUser.id,
