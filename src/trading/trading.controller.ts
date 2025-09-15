@@ -1,3 +1,4 @@
+// trading.controller.ts
 import { Controller, Get, Post, Body, Res } from '@nestjs/common';
 import { TradingService } from './trading.service';
 import { Response } from 'express';
@@ -7,8 +8,8 @@ export class TradingController {
   constructor(private readonly tradingService: TradingService) {}
 
   @Post('order')
-  addOrder(@Body() body: any) {
-    let order: any = {};
+  async addOrder(@Body() body: any) {
+    let raw: any = {};
     try {
       if (typeof body === 'object' && body !== null) {
         if (
@@ -17,27 +18,51 @@ export class TradingController {
         ) {
           const key = Object.keys(body)[0];
           const cleaned = key.replace(/\x00/g, '').trim();
-          order = JSON.parse(cleaned);
+          raw = JSON.parse(cleaned);
         } else {
-          order = body;
+          raw = body;
         }
       }
     } catch (error) {
       console.log('파싱 에러:', error);
-      order = {};
+      raw = {};
     }
 
-    console.log('파싱된 order:', order);
-    this.tradingService.addOrder(order);
+    // ✅ Normalize incoming fields:
+    // infoCode => orderNo; lots => accountNumber
+    const normalized = {
+      ...raw,
+      orderNo: raw.orderNo ?? raw.infoCode ?? null,
+      accountNumber:
+        raw.accountNumber ??
+        (raw.lots !== undefined && raw.lots !== null
+          ? String(raw.lots).trim()
+          : null),
+    };
 
-    // 👉 send extra info back
+    console.log('파싱된 order (normalized):', normalized);
+
+    const matchedUser = await this.tradingService.addOrder(normalized);
+
     return {
       success: true,
       message: '레오 받았습니다',
-      orderNo: order.orderNo,
-      contracts: order.lots,
+      orderNo: normalized.orderNo,
+      accountNumber: normalized.accountNumber,
       status: 'OK',
       serverTime: new Date().toISOString(),
+      user: matchedUser
+        ? {
+            id: matchedUser.id,
+            userNumber: matchedUser.userNumber,
+            accountNumber: matchedUser.accountNumber,
+            email: matchedUser.email,
+            name: matchedUser.name,
+            approvalStatus: matchedUser.approvalStatus,
+            paymentStatus: matchedUser.paymentStatus,
+            accessExpiresAt: matchedUser.accessExpiresAt,
+          }
+        : null,
     };
   }
 

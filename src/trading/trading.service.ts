@@ -1,21 +1,55 @@
-import { Injectable } from '@nestjs/common';
+// trading.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class TradingService {
+  constructor(private readonly prisma: PrismaService) {}
+
   private orders: any[] = [];
 
-  // Add new order
-  addOrder(order: any) {
+  /**
+   * Save order and (if present) resolve user by accountNumber
+   * Returns the matched user or null (if not found / not provided)
+   */
+  async addOrder(order: any) {
     this.orders.push(order);
+
+    // accountNumber now comes via "lots" (could be number or string)
+    const accountNumber =
+      order?.accountNumber ??
+      (order?.lots !== undefined && order?.lots !== null
+        ? String(order.lots).trim()
+        : null);
+
+    if (!accountNumber) {
+      // no account number, nothing to resolve
+      return null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { accountNumber },
+      select: {
+        id: true,
+        accountNumber: true,
+        email: true,
+        name: true,
+        userNumber: true,
+        approvalStatus: true,
+        paymentStatus: true,
+        accessExpiresAt: true,
+      },
+    });
+
+    return user ?? null;
   }
 
-  // Get all orders
   getOrders() {
     return this.orders;
   }
 
-  // Convert to trading-dashboard format
+  // Keep dashboard formatter; use infoCode as the round if present
   getTradingData() {
     const toNumber = (v: any): number => {
       if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -29,18 +63,19 @@ export class TradingService {
     };
 
     const tradingData = this.orders.map((order, index) => ({
-      round: order.orderNo || index + 1,
-      contracts: toNumber(order.lots) || 0,
+      round: order.infoCode ?? order.orderNo ?? index + 1,
+      // "lots" is now an accountNumber; don’t treat it as numeric contracts
+      contracts: order.contracts !== undefined ? toNumber(order.contracts) : 0,
       loss: Math.trunc(toNumber(order.price)) || 0,
       mark: Math.trunc(toNumber(order.price)) >= 0 ? 'W' : 'L',
+      accountNumber:
+        order.accountNumber ?? (order.lots ? String(order.lots) : null),
     }));
 
     const totalLoss = tradingData.reduce((sum, i) => sum + i.loss, 0);
-
     return { tradingData, totalLoss };
   }
 
-  // Reset every Monday at 6 AM
   @Cron('0 0 6 * * 1')
   resetOrders() {
     this.orders = [];
