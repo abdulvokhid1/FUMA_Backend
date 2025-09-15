@@ -51,6 +51,7 @@ export class TradingController {
       accountNumber: normalized.accountNumber,
       status: 'OK',
       serverTime: new Date().toISOString(),
+      price: 1000,
       user: matchedUser
         ? {
             id: matchedUser.id,
