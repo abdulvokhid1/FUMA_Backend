@@ -1,4 +1,3 @@
-// trading.controller.ts
 import { Controller, Get, Post, Body, Res } from '@nestjs/common';
 import { TradingService } from './trading.service';
 import { Response } from 'express';
@@ -43,25 +42,29 @@ export class TradingController {
 
     const matchedUser = await this.tradingService.addOrder(normalized);
 
-    // ✅ Decide AckInfo
+    // ✅ Decide AckInfo and infoCode
     let AckInfo = 0;
-    if (matchedUser?.accessExpiresAt) {
-      const now = new Date();
-      const expiry = new Date(matchedUser.accessExpiresAt);
-      if (expiry.getTime() > now.getTime()) {
-        AckInfo = 1;
+    let infoCode = 2828; // default → user not found
+
+    if (matchedUser) {
+      infoCode = 1818; // user found
+      if (matchedUser.accessExpiresAt) {
+        const now = new Date();
+        const expiry = new Date(matchedUser.accessExpiresAt);
+        if (expiry.getTime() > now.getTime()) {
+          AckInfo = 1;
+        }
       }
     }
 
-    // ✅ Always respond with infoCode = 1818
     return {
       success: true,
-      message: '레오 받았습니다',
-      infoCode: 1818,
+      message: matchedUser ? '레오 받았습니다' : '사용자를 찾을 수 없습니다',
+      infoCode,
       accountNumber: normalized.accountNumber,
-      status: 'OK',
+      status: matchedUser ? 'OK' : 'NOT_FOUND',
       serverTime: new Date().toISOString(),
-      AckInfo, // 👈 dynamic now
+      AckInfo,
       user: matchedUser
         ? {
             id: matchedUser.id,

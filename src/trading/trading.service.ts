@@ -62,8 +62,8 @@ export class TradingService {
     };
 
     const tradingData = this.orders.map((order, index) => ({
-      round: order.infoCode ?? index + 1, // ✅ only infoCode now
-      contracts: 0, // ✅ no longer valid (lots → accountNumber)
+      round: order.infoCode ?? index + 1,
+      contracts: 0,
       loss: Math.trunc(toNumber(order.AckInfo)) || 0,
       mark: Math.trunc(toNumber(order.AckInfo)) >= 0 ? 'W' : 'L',
       accountNumber:
