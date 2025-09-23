@@ -373,7 +373,7 @@ export class AdminService {
           phone: user.phone,
           paymentMethod: user.paymentMethod,
           paymentProofUrl: user.paymentProofUrl,
-
+          accountNumber: user.accountNumber,
           createdAt: user.createdAt.toISOString(),
           updatedAt: user.updatedAt.toISOString(),
           accessExpiresAt: user.accessExpiresAt?.toISOString() ?? null,

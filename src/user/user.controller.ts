@@ -148,4 +148,10 @@ export class UserController {
   ) {
     return this.userService.createAccountNumber(user.id, accountNumber);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('account-number')
+  async getAccountNumber(@CurrentUser() user: User) {
+    return this.userService.getAccountNumber(user.id);
+  }
 }
