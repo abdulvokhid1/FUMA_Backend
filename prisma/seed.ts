@@ -8,7 +8,7 @@ async function main() {
       name: 'BASIC',
       label: 'Basic Plan',
       description: 'Includes signals and basic consulting access',
-      price: 100000, // e.g., KRW
+      price: 1000, // e.g., KRW
       durationDays: 30,
       features: {
         SIGNAL_CHARTS: true,
@@ -20,7 +20,7 @@ async function main() {
       name: 'PRO',
       label: 'Pro Plan',
       description: 'Pro-level access with Martingale EA and Telegram PRO',
-      price: 250000,
+      price: 3000,
       durationDays: 90,
       features: {
         SIGNAL_CHARTS: true,
@@ -34,7 +34,7 @@ async function main() {
       name: 'VIP',
       label: 'VIP Plan',
       description: 'VIP access with all features and Telegram VIP group',
-      price: 600000,
+      price: 10000,
       durationDays: 180,
       features: {
         SIGNAL_CHARTS: true,
