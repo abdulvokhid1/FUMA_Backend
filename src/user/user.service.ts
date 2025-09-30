@@ -714,4 +714,48 @@ export class UserService {
       accountNumber: user.accountNumber,
     };
   }
+
+  async updateAccountNumber(userId: number, accountNumber: string) {
+    if (!accountNumber || !accountNumber.trim()) {
+      throw new BadRequestException('계좌번호를 입력해주세요.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('유저를 찾을 수 없습니다.');
+
+    // If user has no accountNumber, treat it as create
+    if (!user.accountNumber) {
+      throw new BadRequestException(
+        '등록된 계좌번호가 없습니다. 먼저 등록해주세요.',
+      );
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { accountNumber },
+    });
+
+    return {
+      message: '계좌번호가 수정되었습니다.',
+      accountNumber: updated.accountNumber,
+    };
+  }
+
+  async deleteAccountNumber(userId: number) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('유저를 찾을 수 없습니다.');
+
+    if (!user.accountNumber) {
+      throw new BadRequestException('삭제할 계좌번호가 없습니다.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { accountNumber: null }, // remove unique value
+    });
+
+    return {
+      message: '계좌번호가 삭제되었습니다.',
+    };
+  }
 }

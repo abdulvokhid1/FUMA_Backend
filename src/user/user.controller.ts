@@ -9,6 +9,8 @@ import {
   BadRequestException,
   UsePipes,
   ValidationPipe,
+  Patch,
+  Delete,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto, LoginDto, SubmitMembershipDto } from './dto/user.dto';
@@ -153,5 +155,21 @@ export class UserController {
   @Get('account-number')
   async getAccountNumber(@CurrentUser() user: User) {
     return this.userService.getAccountNumber(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('account-number')
+  async updateAccountNumber(
+    @CurrentUser() user: User,
+    @Body('accountNumber') accountNumber: string,
+  ) {
+    return this.userService.updateAccountNumber;
+    (user.id, accountNumber);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('account-number')
+  async deleteAccountNumber(@CurrentUser() user: User) {
+    return this.userService.deleteAccountNumber(user.id);
   }
 }
