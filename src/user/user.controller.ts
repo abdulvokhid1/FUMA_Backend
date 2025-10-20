@@ -100,7 +100,6 @@ export class UserController {
   async getAccessOnly(@CurrentUser() user: User) {
     return this.userService.getAccessOnly(user.id);
   }
-  n;
 
   @UseGuards(JwtAuthGuard)
   @Get('my-plan/files/meta')
