@@ -26,6 +26,9 @@ import {
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
+import AdmZip from 'adm-zip';
+import * as fs from 'fs';
+import { join } from 'path';
 
 import { Express } from 'express';
 
@@ -1020,6 +1023,7 @@ export class AdminService {
     files: { fileA?: Express.Multer.File[]; fileB?: Express.Multer.File[] },
     adminId: number,
   ) {
+    // 🧱 Check if plan exists
     const plan = await this.prisma.membershipPlanMeta.findUnique({
       where: { id: planId },
     });
@@ -1028,28 +1032,60 @@ export class AdminService {
     const data: Prisma.MembershipPlanMetaUpdateInput = {};
     const now = new Date();
 
+    // 🧩 Helper function for auto-zipping .exe
+    const handleFile = (f: Express.Multer.File): Express.Multer.File => {
+      try {
+        if (f.originalname.toLowerCase().endsWith('.exe')) {
+          const zip = new AdmZip();
+          zip.addLocalFile(f.path);
+
+          const zipName = f.originalname.replace(/\.exe$/i, '.zip');
+          const zipPath = join(f.destination, zipName);
+
+          // Write ZIP
+          zip.writeZip(zipPath);
+
+          // Delete original .exe
+          fs.unlinkSync(f.path);
+
+          // Update file info to reflect the new .zip
+          f.filename = zipName;
+          f.originalname = zipName;
+        }
+      } catch (err) {
+        console.error('Auto-zip failed:', err);
+      }
+      return f;
+    };
+
+    // 🧩 File A
     if (files.fileA?.[0]) {
-      const f = files.fileA[0];
+      let f = handleFile(files.fileA[0]);
       data.fileAPath = `/uploads/plan_files/${f.filename}`;
       data.fileAName = f.originalname;
       data.fileAUpdatedAt = now;
     }
+
+    // 🧩 File B
     if (files.fileB?.[0]) {
-      const f = files.fileB[0];
+      let f = handleFile(files.fileB[0]);
       data.fileBPath = `/uploads/plan_files/${f.filename}`;
       data.fileBName = f.originalname;
       data.fileBUpdatedAt = now;
     }
 
+    // 🧱 No files uploaded
     if (!Object.keys(data).length) {
       throw new BadRequestException('No files uploaded');
     }
 
+    // 🧱 Update DB
     const updated = await this.prisma.membershipPlanMeta.update({
       where: { id: planId },
       data,
     });
 
+    // 🧱 Log admin activity
     await this.prisma.adminLog.create({
       data: {
         adminId,
@@ -1063,7 +1099,10 @@ export class AdminService {
       },
     });
 
-    return { message: 'Files uploaded', plan: updated };
+    return {
+      message: 'Files uploaded (auto-zipped if needed)',
+      plan: updated,
+    };
   }
 
   ////////
