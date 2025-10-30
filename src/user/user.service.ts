@@ -11,8 +11,8 @@ import {
   MembershipPlan,
   PaymentMethod,
   SubmissionStatus,
-  PaymentStatus, // ✅ add
-  ApprovalStatus, // ✅ add
+  PaymentStatus,
+  ApprovalStatus,
   User as PrismaUser,
   User,
 } from '@prisma/client';
@@ -653,15 +653,39 @@ export class UserService {
     };
   }
 
+  // async getMyPlanFilePath(userId: number, slot: 'A' | 'B') {
+  //   if (!['A', 'B'].includes(slot))
+  //     throw new BadRequestException('Invalid slot');
+
+  //   const plan = await this.getActiveGrantPlan(userId);
+  //   if (!plan) throw new UnauthorizedException('No active membership');
+
+  //   const meta = await this.prisma.membershipPlanMeta.findFirst({
+  //     where: { name: plan, isActive: true },
+  //     select: {
+  //       fileAPath: true,
+  //       fileAName: true,
+  //       fileBPath: true,
+  //       fileBName: true,
+  //     },
+  //   });
+  //   if (!meta) throw new UnauthorizedException('Plan not available');
+
+  //   const path = slot === 'A' ? meta.fileAPath : meta.fileBPath;
+  //   const name = slot === 'A' ? meta.fileAName : meta.fileBName;
+  //   if (!path) throw new UnauthorizedException('File not available');
+
+  //   return { path, name: name ?? `file-${slot}` };
+  // }
+
   async getMyPlanFilePath(userId: number, slot: 'A' | 'B') {
     if (!['A', 'B'].includes(slot))
       throw new BadRequestException('Invalid slot');
 
-    const plan = await this.getActiveGrantPlan(userId);
-    if (!plan) throw new UnauthorizedException('No active membership');
-
+    // 🔸 Allow downloads for everyone (no membership check)
+    // You can choose a default plan or fetch any available plan meta.
     const meta = await this.prisma.membershipPlanMeta.findFirst({
-      where: { name: plan, isActive: true },
+      where: { isActive: true },
       select: {
         fileAPath: true,
         fileAName: true,
@@ -669,10 +693,12 @@ export class UserService {
         fileBName: true,
       },
     });
-    if (!meta) throw new UnauthorizedException('Plan not available');
+
+    if (!meta) throw new UnauthorizedException('No active plan meta found');
 
     const path = slot === 'A' ? meta.fileAPath : meta.fileBPath;
     const name = slot === 'A' ? meta.fileAName : meta.fileBName;
+
     if (!path) throw new UnauthorizedException('File not available');
 
     return { path, name: name ?? `file-${slot}` };
