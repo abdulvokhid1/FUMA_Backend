@@ -26,9 +26,10 @@ import {
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
-import * as AdmZip from 'adm-zip';
+import { join } from 'path';
+import * as path from 'path';
 import * as fs from 'fs';
-import path, { join } from 'path';
+import AdmZip from 'adm-zip';
 
 import { Express } from 'express';
 
