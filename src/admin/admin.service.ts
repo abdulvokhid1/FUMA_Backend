@@ -29,8 +29,7 @@ import { getPlanAccessMap } from '../utils/plan-access.util';
 import { join } from 'path';
 import * as path from 'path';
 import * as fs from 'fs';
-import AdmZip from 'adm-zip';
-
+import * as AdmZip from 'adm-zip';
 import { Express } from 'express';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -1065,7 +1064,6 @@ export class AdminService {
         if (f.originalname.toLowerCase().endsWith('.exe')) {
           const zip = new AdmZip();
 
-          // ✅ Only add the basename, not the full path
           const baseName = path.basename(f.path);
           zip.addFile(baseName, fs.readFileSync(f.path));
 
@@ -1074,7 +1072,7 @@ export class AdminService {
 
           zip.writeZip(zipPath);
 
-          fs.unlinkSync(f.path); // delete the original exe
+          fs.unlinkSync(f.path);
           f.filename = zipName;
           f.originalname = zipName;
         }
