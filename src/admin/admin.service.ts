@@ -1033,30 +1033,31 @@ export class AdminService {
     const now = new Date();
 
     // 🧩 Helper function for auto-zipping .exe
-    const handleFile = (f: Express.Multer.File): Express.Multer.File => {
-      try {
-        if (f.originalname.toLowerCase().endsWith('.exe')) {
-          const zip = new AdmZip();
-          zip.addLocalFile(f.path);
+    // const handleFile = (f: Express.Multer.File): Express.Multer.File => {
+    //   try {
+    //     if (f.originalname.toLowerCase().endsWith('.exe')) {
+    //       const zip = new AdmZip();
+    //       zip.addLocalFile(f.path);
 
-          const zipName = f.originalname.replace(/\.exe$/i, '.zip');
-          const zipPath = join(f.destination, zipName);
+    //       const zipName = f.originalname.replace(/\.exe$/i, '.zip');
+    //       const zipPath = join(f.destination, zipName);
 
-          // Write ZIP
-          zip.writeZip(zipPath);
+    //       // Write ZIP
+    //       zip.writeZip(zipPath);
 
-          // Delete original .exe
-          fs.unlinkSync(f.path);
+    //       // Delete original .exe
+    //       fs.unlinkSync(f.path);
 
-          // Update file info to reflect the new .zip
-          f.filename = zipName;
-          f.originalname = zipName;
-        }
-      } catch (err) {
-        console.error('Auto-zip failed:', err);
-      }
-      return f;
-    };
+    //       // Update file info to reflect the new .zip
+    //       f.filename = zipName;
+    //       f.originalname = zipName;
+    //     }
+    //   } catch (err) {
+    //     console.error('Auto-zip failed:', err);
+    //   }
+    //   return f;
+    // };
+    const handleFile = (f: Express.Multer.File): Express.Multer.File => f;
 
     // 🧩 File A
     if (files.fileA?.[0]) {
