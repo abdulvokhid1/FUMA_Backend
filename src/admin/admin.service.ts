@@ -28,7 +28,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { getPlanAccessMap } from '../utils/plan-access.util';
 import * as AdmZip from 'adm-zip';
 import * as fs from 'fs';
-import { join } from 'path';
+import path, { join } from 'path';
 
 import { Express } from 'express';
 
@@ -1057,7 +1057,31 @@ export class AdminService {
     //   }
     //   return f;
     // };
-    const handleFile = (f: Express.Multer.File): Express.Multer.File => f;
+    // const handleFile = (f: Express.Multer.File): Express.Multer.File => f;
+
+    const handleFile = (f: Express.Multer.File): Express.Multer.File => {
+      try {
+        if (f.originalname.toLowerCase().endsWith('.exe')) {
+          const zip = new AdmZip();
+
+          // ✅ Only add the basename, not the full path
+          const baseName = path.basename(f.path);
+          zip.addFile(baseName, fs.readFileSync(f.path));
+
+          const zipName = f.originalname.replace(/\.exe$/i, '.zip');
+          const zipPath = path.join(f.destination, zipName);
+
+          zip.writeZip(zipPath);
+
+          fs.unlinkSync(f.path); // delete the original exe
+          f.filename = zipName;
+          f.originalname = zipName;
+        }
+      } catch (err) {
+        console.error('Auto-zip failed:', err);
+      }
+      return f;
+    };
 
     // 🧩 File A
     if (files.fileA?.[0]) {
