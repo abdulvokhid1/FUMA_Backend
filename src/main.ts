@@ -55,6 +55,7 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      stopAtFirstError: false, // ❗ return ALL errors, not just first
       exceptionFactory: (errors) => {
         const messages = errors.flatMap((e) =>
           Object.values(e.constraints ?? {}),

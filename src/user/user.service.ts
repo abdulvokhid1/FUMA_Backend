@@ -35,7 +35,13 @@ export class UserService {
       where: { email: dto.email },
     });
     if (existing) throw new BadRequestException('Email already in use');
-
+    if (existing) {
+      throw new BadRequestException({
+        message: 'Email already in use',
+        field: 'email',
+        errorCode: 'EMAIL_TAKEN',
+      });
+    }
     const hash = await bcrypt.hash(dto.password, 10);
 
     // 🔢 Find the highest userNumber
