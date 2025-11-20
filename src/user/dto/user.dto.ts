@@ -19,7 +19,8 @@ export class RegisterDto {
   @IsNotEmpty({ message: 'Name is required' })
   name: string;
 
-  @IsPhoneNumber('KR', { message: 'Invalid phone number format' })
+  @IsString()
+  @IsNotEmpty({ message: 'Phone number is required' })
   phone: string;
 }
 
