@@ -10,6 +10,9 @@ import { JobController } from './jobs/job.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { TradingModule } from './trading/trading.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AuthController } from './auth/auth.controller';
+import { AuthService } from './auth/auth.service';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -26,11 +29,9 @@ import { ScheduleModule } from '@nestjs/schedule';
     JobsModule,
     TradingModule,
     ScheduleModule.forRoot(),
+    AuthModule,
   ],
-  controllers: [AppController, JobController],
-  providers: [
-    AppService,
-    PrismaService, // ✅ so you can inject PrismaService anywhere
-  ],
+  controllers: [AppController, JobController, AuthController],
+  providers: [AppService, PrismaService],
 })
 export class AppModule {}

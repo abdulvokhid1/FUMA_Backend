@@ -79,7 +79,6 @@ model User {
   submissions        PaymentSubmission[]
   notifications      Notification[]
   planGrants         UserPlanGrant[]     @relation("UserToPlanGrants")
-
   @@index([isDeleted])
 }
 
