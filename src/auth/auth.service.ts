@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import { verifyTelegramLogin } from '@/utils/telegram.verify';
+import { verifyTelegramLogin } from '../utils/telegram.verify';
 
 @Injectable()
 export class AuthService {
